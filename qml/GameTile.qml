@@ -18,8 +18,33 @@ Item {
         id: body
         width: tile.width
         height: tile.height
-        opacity: tile.game.hidden ? 0.5 : 1
+        opacity: appRoot.dragGame === tile.game ? 0.35 : (tile.game.hidden ? 0.5 : 1)
         transform: Translate { id: shift }
+
+        DragHandler {   // oyunu tutup bir rafa ya da raftaki başka bir yere sürükle
+            id: dh
+            target: null
+            dragThreshold: 14
+            onActiveChanged: active ? appRoot.startDrag(tile.game, centroid.scenePosition) : appRoot.endDrag()
+            onCentroidChanged: if (active) appRoot.moveDrag(centroid.scenePosition)
+        }
+        DropArea {
+            id: reorder
+            anchors.fill: parent
+            keys: ["game"]
+            enabled: backend.currentShelfIsCustom && backend.sortMode === 4
+            onDropped: if (appRoot.dragGame && appRoot.dragGame !== tile.game)
+                           backend.moveInShelf(backend.currentShelf, appRoot.dragGame.key, tile.game.key)
+        }
+        Rectangle {   // bırakılacak yeri gösteren çizgi
+            visible: reorder.containsDrag && appRoot.dragGame !== tile.game
+            x: 4; y: 16
+            width: 4
+            height: cover.height
+            radius: 2
+            color: theme.accent
+            z: 5
+        }
 
         MouseArea {
             id: hover

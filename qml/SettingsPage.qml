@@ -109,6 +109,13 @@ Item {
                     onToggled: backend.wishNotify = checked
                 }
                 AppSwitch {
+                    Layout.fillWidth: true
+                    text: "Oyundaki arkadaşlarımı göster"
+                    note: "Steam arkadaşlarından şu an oyunda olanlar rafın altında görünür. Lobisi açık olanlara tek tıkla katılabilirsin."
+                    checked: backend.showFriends
+                    onToggled: { backend.showFriends = checked; backend.checkFriends(true) }
+                }
+                AppSwitch {
                     visible: backend.updateEnabled
                     Layout.fillWidth: true
                     text: "Güncellemeleri kendiliğinden kontrol et"

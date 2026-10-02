@@ -41,6 +41,12 @@ AppMenu {
         visible: menu.has && !menu.epic
         onTriggered: backend.openStore(menu.game.key)
     }
+    AppMenuItem { text: "Rafa ekle…"; onTriggered: shelfPick.openFor(menu.game) }
+    AppMenuItem {
+        text: "Bu raftan çıkar"
+        visible: backend.currentShelfIsCustom
+        onTriggered: backend.removeFromShelf(backend.currentShelf, menu.game.key)
+    }
     AppMenuItem { text: "Kapağı değiştir…"; onTriggered: coverPicker.openFor(menu.game) }
     AppMenuSeparator {}
     AppMenuItem {

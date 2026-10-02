@@ -11,6 +11,20 @@ Rectangle {
     readonly property bool epic: has && game.platform === "epic"
     readonly property var p: S.primary(game)
     signal closeRequested()
+    property var ach: null          // başarımlar
+    property bool achLoading: false
+    property bool achAll: false
+    onGameChanged: {
+        ach = null; achAll = false
+        achLoading = !!game && game.platform !== "local"
+        if (achLoading) backend.loadAchievements(game.key)
+    }
+    Connections {
+        target: backend
+        function onAchievementsLoaded(key, data) {
+            if (!!page.game && key === page.game.key) { page.ach = data; page.achLoading = false }
+        }
+    }
 
     color: theme.bg
     opacity: 0.4
@@ -162,6 +176,10 @@ Rectangle {
                         onClicked: backend.toggleHidden(page.game.key)
                     }
                     AppButton {
+                        text: "Rafa ekle"
+                        onClicked: shelfPick.openFor(page.game)
+                    }
+                    AppButton {
                         text: "Kapağı değiştir"
                         onClicked: coverPicker.openFor(page.game)
                     }
@@ -217,6 +235,102 @@ Rectangle {
                     Label { visible: page.epic && page.game.update; text: "Güncelleme" }
                     Value { visible: page.epic && page.game.update; text: "Yeni sürüm hazır. Güncelle'ye basınca sıraya girer." ; wrapMode: Text.WordWrap }
                 }
+                // ---- başarımlar
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 10
+                    visible: page.has && page.game.platform !== "local" && (page.achLoading || (page.ach && (page.ach.total > 0 || page.ach.error !== "")))
+                    spacing: 10
+                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.line }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { text: "Başarımlar"; color: theme.text; font.family: theme.displayFont; font.pixelSize: 20; font.weight: Font.Bold }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            visible: page.ach && page.ach.total > 0
+                            text: page.ach ? page.ach.done + " / " + page.ach.total : ""
+                            color: theme.muted
+                            font.pixelSize: 14
+                        }
+                    }
+                    Text { visible: page.achLoading; text: "Yükleniyor…"; color: theme.muted; font.pixelSize: 13 }
+                    Text {
+                        visible: !!page.ach && page.ach.error !== ""
+                        Layout.fillWidth: true
+                        text: page.ach ? page.ach.error : ""
+                        color: theme.muted
+                        font.pixelSize: 13
+                        wrapMode: Text.WordWrap
+                    }
+                    Rectangle {
+                        visible: !!page.ach && page.ach.total > 0
+                        Layout.fillWidth: true
+                        height: 6
+                        radius: 3
+                        color: theme.shelf
+                        Rectangle {
+                            width: page.ach && page.ach.total ? parent.width * page.ach.done / page.ach.total : 0
+                            height: parent.height
+                            radius: 3
+                            color: theme.chart
+                        }
+                    }
+                    Repeater {
+                        model: page.ach && page.ach.items ? (page.achAll ? page.ach.items : page.ach.items.slice(0, 6)) : []
+                        RowLayout {
+                            id: achRow
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 12
+                            Rectangle {
+                                Layout.preferredWidth: 40
+                                Layout.preferredHeight: 40
+                                radius: 6
+                                color: theme.shelf
+                                clip: true
+                                Image {
+                                    anchors.fill: parent
+                                    source: achRow.modelData.icon
+                                    asynchronous: true
+                                    sourceSize.width: 80
+                                    opacity: achRow.modelData.done ? 1 : 0.6
+                                }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 1
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: achRow.modelData.name
+                                    color: achRow.modelData.done ? theme.text : theme.muted
+                                    font.pixelSize: 14
+                                    font.weight: Font.Bold
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    visible: text !== ""
+                                    text: achRow.modelData.desc
+                                    color: theme.muted
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            Text {
+                                text: achRow.modelData.done ? (achRow.modelData.time ? appRoot.dateText(achRow.modelData.time) : "Açıldı") : "Kilitli"
+                                color: achRow.modelData.done ? theme.ok : theme.faint
+                                font.pixelSize: 12
+                            }
+                        }
+                    }
+                    AppButton {
+                        visible: !!page.ach && page.ach.items && page.ach.items.length > 6
+                        kind: "ghost"
+                        text: page.achAll ? "Daha az göster" : "Hepsini göster (" + (page.ach ? page.ach.items.length : 0) + ")"
+                        onClicked: page.achAll = !page.achAll
+                    }
+                }
+
                 Text {
                     Layout.fillWidth: true
                     visible: page.has && !page.epic && page.game.state !== "not_installed"

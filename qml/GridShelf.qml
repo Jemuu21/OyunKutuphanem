@@ -18,6 +18,17 @@ FocusScope {
         delegate: GameTile {}
         clip: true
         focus: true
+        interactive: false      // fareyle sürükleme oyunları taşımak için; kaydırma tekerlek ve kaydırma çubuğuyla
+        WheelHandler {
+            target: null
+            onWheel: (ev) => {
+                var dy = ev.pixelDelta.y !== 0 ? ev.pixelDelta.y : ev.angleDelta.y / 120 * 110
+                var top = grid.originY - grid.topMargin
+                var bottom = Math.max(top, grid.originY + grid.contentHeight + grid.bottomMargin - grid.height)
+                grid.contentY = Math.max(top, Math.min(bottom, grid.contentY - dy))
+            }
+        }
+
         keyNavigationEnabled: true
         boundsBehavior: Flickable.StopAtBounds
         cacheBuffer: 600

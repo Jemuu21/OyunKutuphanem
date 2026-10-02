@@ -11,7 +11,7 @@ Item {
     readonly property bool isCurrent: ListView.isCurrentItem && view && view.activeFocus
     width: view ? view.width : 800
     height: 76
-    opacity: game.hidden ? 0.5 : 1
+    opacity: appRoot.dragGame === game ? 0.35 : (game.hidden ? 0.5 : 1)
 
     Rectangle {
         anchors.fill: parent
@@ -28,6 +28,27 @@ Item {
         width: parent.width - 40
         height: 1
         color: theme.line
+    }
+
+    DragHandler {
+        target: null
+        dragThreshold: 14
+        onActiveChanged: active ? appRoot.startDrag(row.game, centroid.scenePosition) : appRoot.endDrag()
+        onCentroidChanged: if (active) appRoot.moveDrag(centroid.scenePosition)
+    }
+    DropArea {
+        id: reorder
+        anchors.fill: parent
+        keys: ["game"]
+        enabled: backend.currentShelfIsCustom && backend.sortMode === 4
+        onDropped: if (appRoot.dragGame && appRoot.dragGame !== row.game)
+                       backend.moveInShelf(backend.currentShelf, appRoot.dragGame.key, row.game.key)
+    }
+    Rectangle {
+        visible: reorder.containsDrag && appRoot.dragGame !== row.game
+        x: 12; width: parent.width - 24; height: 3; radius: 1.5
+        color: theme.accent
+        z: 5
     }
 
     MouseArea {

@@ -1,5 +1,5 @@
-- Ne oynasam? Üst çubuktaki zar butonu (ya da Ctrl+R) kurulu oyunlarından birini seçer. "Uzun süredir açmadıklarım" ve "Hiç oynamadıklarım" seçenekleri de var.
-- Steam istek listendeki bir oyun indirime girince bildirim çıkıyor ve rafın üstünde bir şerit görünüyor. Menü > İstek listemdeki indirimler ile hepsini fiyatlarıyla görebilirsin.
-- Steam indirmesi bitince de artık bildirim çıkıyor.
-- Kendi oyununu ekle: Menü > Kendi oyununu ekle ile Steam ve Epic dışındaki oyunlarını (.exe ya da kısayol) rafa koyabilirsin. Oynama süresi de sayılıyor. Üstteki filtrede "Diğer" olarak görünürler.
-- Tarayıcı motoru artık sadece Steam'e giriş yapılmışsa başlatılıyor, program biraz daha hızlı açılıyor.
+- Kendi rafların: rafın üstünde "Tümü", "Favoriler" ve kendi rafların var. Bir oyunu fareyle tutup bir rafa sürükleyince o rafa eklenir. Kendi rafında oyunları sürükleyerek istediğin sıraya dizebilirsin. Rafa sağ tıklayıp adını değiştirebilir ya da silebilirsin.
+- Oyundaki arkadaşların: Steam arkadaşlarından şu an oyunda olanlar rafın altında görünür. Lobisi açık olanların oyununa tek tıkla katılabilirsin.
+- İstatistikler (Menü > İstatistikler ya da Ctrl+I): toplam oynama süren, son 14 günün grafiği, en çok oynadıkların ve platformlara göre süreler.
+- Başarımlar: bir oyunun ayrıntı sayfasında Steam ve Epic başarımların görünür.
+- Rafta artık fareyle sürükleyince sayfa kaymıyor, oyun taşınıyor. Kaydırmak için fare tekerleğini ya da kaydırma çubuğunu kullan.

@@ -26,6 +26,29 @@ ApplicationWindow {
     property bool settingsOpen: false
     property bool skyOpen: false
     property bool diskOpen: false
+    property bool statsOpen: false
+    property var dragGame: null         // sürüklenen oyun
+    property point dragPos: Qt.point(0, 0)
+
+    function startDrag(g, p) { dragPos = p; dragGame = g }
+    function moveDrag(p) { dragPos = p }
+    function endDrag() {
+        if (!dragGame) return
+        dragGhost.Drag.drop()
+        dragGame = null
+    }
+    function minutesText(m, short) {
+        m = Math.round(m || 0)
+        if (m < 60) return m + " dk"
+        var h = Math.floor(m / 60), r = m % 60
+        if (short || h >= 100 || r === 0) return h.toLocaleString(Qt.locale("tr_TR"), "f", 0) + " sa"
+        return h + " sa " + r + " dk"
+    }
+    function dateText(ts) {
+        var d = new Date(ts * 1000)
+        var ay = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
+        return d.getDate() + " " + ay[d.getMonth()] + " " + d.getFullYear()
+    }
     property int visibilityBeforeSky: Window.Windowed
 
     // ------------------------------------------------------------ ortak işlevler
@@ -99,6 +122,7 @@ ApplicationWindow {
     }
     function closeTop() {
         if (detailGame) closeDetail()
+        else if (statsOpen) { statsOpen = false; focusView() }
         else if (diskOpen) { diskOpen = false; focusView() }
         else if (settingsOpen) { settingsOpen = false; focusView() }
         else if (skyOpen) closeSky()
@@ -131,7 +155,7 @@ ApplicationWindow {
 
     // ------------------------------------------------------------ klavye kısayolları
     Shortcut { sequence: "Ctrl+F"; onActivated: { appRoot.closeTop(); search.forceActiveFocus(); search.selectAll() } }
-    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !pickDialog.opened && !wishDialog.opened && !localDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
+    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !pickDialog.opened && !wishDialog.opened && !localDialog.opened && !shelfPick.opened && !nameDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
     Shortcut { sequence: "Ctrl+1"; onActivated: { backend.viewMode = "grid"; focusView() } }
     Shortcut { sequence: "Ctrl+2"; onActivated: { backend.viewMode = "list"; focusView() } }
     Shortcut { sequence: "Ctrl+T"; onActivated: backend.dark = !backend.dark }
@@ -140,6 +164,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+,"; onActivated: settingsOpen = true }
     Shortcut { sequence: "F1"; onActivated: shortcutsHelp() }
     Shortcut { sequence: "Ctrl+R"; onActivated: pickDialog.open() }
+    Shortcut { sequence: "Ctrl+I"; onActivated: appRoot.statsOpen = !appRoot.statsOpen }
 
     function shortcutsHelp() {
         dialog.ask("Klavye kısayolları",
@@ -152,6 +177,8 @@ ApplicationWindow {
                    "Ctrl+T   Aydınlık / karanlık tema\n" +
                    "Ctrl+G   Gökyüzü modu\n" +
                    "Ctrl+R   Ne oynasam?\n" +
+                   "Ctrl+I   İstatistikler\n" +
+                   "Bir oyunu tutup sürükle   Raflara ekle ya da raftaki sırasını değiştir\n" +
                    "F5   Listeyi yenile\n" +
                    "Ctrl+,   Ayarlar",
                    "Tamam", "", false, null, null)
@@ -209,7 +236,8 @@ ApplicationWindow {
             }
             AppCombo {
                 Layout.preferredWidth: 182
-                model: ["Ada göre", "Son oynanan", "En çok oynanan", "Kurulu olanlar önce"]
+                model: backend.currentShelfIsCustom ? ["Ada göre", "Son oynanan", "En çok oynanan", "Kurulu olanlar önce", "Rafın sırası"]
+                                                    : ["Ada göre", "Son oynanan", "En çok oynanan", "Kurulu olanlar önce"]
                 currentIndex: backend.sortMode
                 onActivated: (i) => backend.sortMode = i
             }
@@ -293,6 +321,14 @@ ApplicationWindow {
             AppButton { kind: "secondary"; compact: true; text: "Göster"; onClicked: freeDialog.open() }
         }
 
+        ShelfBar {
+            Layout.fillWidth: true
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            Layout.bottomMargin: 6
+            Layout.preferredHeight: 40
+        }
+
         Item {   // raf
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -316,6 +352,11 @@ ApplicationWindow {
                 visible: !!gamesModel && gamesModel.count === 0
                 onOpenSettings: appRoot.settingsOpen = true
             }
+        }
+
+        FriendsStrip {
+            Layout.fillWidth: true
+            visible: backend.showFriends && backend.friendsPlaying.length > 0
         }
 
         Rectangle {   // durum çubuğu
@@ -373,6 +414,7 @@ ApplicationWindow {
         AppMenuItem { text: "Listeyi yenile (F5)"; onTriggered: backend.reload_all() }
         AppMenuItem { text: "Gökyüzü modu (Ctrl+G)"; onTriggered: appRoot.openSky() }
         AppMenuItem { text: "Epic'te ücretsiz oyunlar"; onTriggered: { backend.checkFreeGames(); freeDialog.open() } }
+        AppMenuItem { text: "İstatistikler (Ctrl+I)"; onTriggered: appRoot.statsOpen = true }
         AppMenuItem { text: "Disk alanı"; onTriggered: appRoot.diskOpen = true }
         AppMenuItem { text: "İstek listemdeki indirimler"; visible: backend.wishAvailable; onTriggered: { backend.checkWishlist(); wishDialog.open() } }
         AppMenuItem { text: "Kendi oyununu ekle…"; onTriggered: localDialog.openAdd() }
@@ -411,6 +453,15 @@ ApplicationWindow {
         visible: !!appRoot.detailGame
         game: appRoot.detailGame
         onCloseRequested: appRoot.closeDetail()
+    }
+    StatsPage {
+        anchors.top: titleStrip.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        z: 41
+        visible: appRoot.statsOpen
+        onCloseRequested: { appRoot.statsOpen = false; appRoot.focusView() }
     }
     DiskPage {
         anchors.top: titleStrip.bottom
@@ -461,6 +512,30 @@ ApplicationWindow {
     PickDialog { id: pickDialog; objectName: "pickDialog" }
     WishlistDialog { id: wishDialog; objectName: "wishDialog" }
     LocalGameDialog { id: localDialog; objectName: "localDialog" }
+    ShelfPickDialog { id: shelfPick; objectName: "shelfPick" }
+    NameDialog { id: nameDialog; objectName: "nameDialog" }
+    Connections {
+        target: backend
+        function onOpenGameRequested(g) { appRoot.openDetail(g) }
+    }
+
+    Item {   // sürüklenen oyunun küçük kapağı
+        id: dragGhost
+        objectName: "dragGhost"
+        z: 300
+        width: 150
+        height: 70
+        visible: appRoot.dragGame !== null
+        // imlecin sağ altında dursun ki bırakılacak raf görünsün; bırakma noktası imlecin ucu
+        x: appRoot.dragPos.x + 14
+        y: appRoot.dragPos.y + 14
+        Drag.active: appRoot.dragGame !== null
+        Drag.hotSpot.x: -14
+        Drag.hotSpot.y: -14
+        Drag.keys: ["game"]
+        Rectangle { anchors.fill: parent; anchors.margins: -2; color: theme.accent; radius: 3 }
+        CoverArt { anchors.fill: parent; game: appRoot.dragGame }
+    }
     Connections {
         target: backend
         function onLocalAdded(g) { coverPicker.openFor(g) }   // yeni eklenen oyuna kapak seçtir

@@ -125,7 +125,7 @@ def setup_logging():
 
 def format_bytes(n):
     n = float(n or 0)
-    if n <= 0:
+    if n < 1024 ** 2:
         return ""
     gb = n / 1024 ** 3
     if gb >= 1024:
@@ -257,7 +257,8 @@ def load_config():
            "tray_hint_shown": False, "sort": 0,
            "dark": True, "reduce_motion": False, "software_render": False,
            "view": "grid", "onboarded": False,
-           "free_notify": True, "auto_update_check": True, "wish_notify": True}
+           "free_notify": True, "auto_update_check": True, "wish_notify": True,
+           "show_friends": True, "shelf": ""}
     cfg.update(read_json(CONFIG_FILE, {}))
     return cfg
 
@@ -631,6 +632,83 @@ def steam_wishlist_deals(steamid, token="", key=""):
     return {"total": len(appids), "deals": deals, "updated": int(time.time())}
 
 
+def steam_friends_in_game(steamid, token="", key=""):
+    """Steam arkadaşlarından şu an oyunda olanlar."""
+    import requests
+    auth = {"access_token": token} if token else ({"key": key} if key else {})
+    r = requests.get(f"{STEAM_API}/ISteamUser/GetFriendList/v1/",
+                     params={"steamid": steamid, "relationship": "friend", **auth}, timeout=20)
+    if r.status_code in (401, 403):
+        raise RuntimeError("Arkadaş listesi okunamadı (profilinde arkadaş listesi gizli olabilir).")
+    r.raise_for_status()
+    ids = [f["steamid"] for f in ((r.json() or {}).get("friendslist") or {}).get("friends", []) if f.get("steamid")]
+    out = []
+    for i in range(0, len(ids), 100):
+        r = requests.get(f"{STEAM_API}/ISteamUser/GetPlayerSummaries/v2/",
+                         params={"steamids": ",".join(ids[i:i + 100]), **auth}, timeout=20)
+        r.raise_for_status()
+        for p in ((r.json() or {}).get("response") or {}).get("players", []):
+            if p.get("gameid"):
+                out.append({"steamid": p["steamid"], "name": p.get("personaname") or "Arkadaş",
+                            "avatar": p.get("avatarmedium") or p.get("avatar") or "",
+                            "appid": str(p["gameid"]), "game": p.get("gameextrainfo") or "Bir oyun",
+                            "lobby": p.get("lobbysteamid") or "", "profile": p.get("profileurl") or ""})
+    out.sort(key=lambda x: (x["game"].casefold(), x["name"].casefold()))
+    return out
+
+
+def steam_achievements(appid, steamid, token="", key=""):
+    import requests
+    auth = {"access_token": token} if token else ({"key": key} if key else {})
+    r = requests.get(f"{STEAM_API}/ISteamUserStats/GetPlayerAchievements/v1/",
+                     params={"appid": appid, "steamid": steamid, "l": "turkish", **auth}, timeout=20)
+    if r.status_code in (401, 403):
+        raise RuntimeError("Başarımlar okunamadı. Steam profilinde 'Oyun ayrıntıları' gizli olabilir.")
+    if r.status_code == 400:
+        return {"total": 0, "done": 0, "items": []}      # oyunun başarımı yok
+    r.raise_for_status()
+    ach = ((r.json() or {}).get("playerstats") or {}).get("achievements") or []
+    schema = {}
+    try:
+        s = requests.get(f"{STEAM_API}/ISteamUserStats/GetSchemaForGame/v2/",
+                         params={"appid": appid, "l": "turkish", **auth}, timeout=20)
+        for a in (((s.json() or {}).get("game") or {}).get("availableGameStats") or {}).get("achievements") or []:
+            schema[a.get("name")] = a
+    except Exception:
+        pass
+    items = []
+    for a in ach:
+        sc = schema.get(a.get("apiname"), {})
+        done = bool(a.get("achieved"))
+        items.append({"name": a.get("name") or sc.get("displayName") or a.get("apiname", ""),
+                      "desc": a.get("description") or sc.get("description") or "",
+                      "done": done, "time": int(a.get("unlocktime") or 0),
+                      "icon": (sc.get("icon") if done else sc.get("icongray")) or ""})
+    items.sort(key=lambda x: (not x["done"], -x["time"], x["name"].casefold()))
+    return {"total": len(items), "done": sum(i["done"] for i in items), "items": items}
+
+
+def epic_achievements(app):
+    data = legendary_json("achievements", app, "--json", timeout=120)
+    items = []
+    for group in ("completed", "in_progress", "uninitiated"):
+        for a in data.get(group) or []:
+            done = bool(a.get("unlocked"))
+            t = 0
+            if done and a.get("unlock_date"):
+                try:
+                    from datetime import datetime
+                    t = int(datetime.fromisoformat(str(a["unlock_date"]).replace("Z", "+00:00")).timestamp())
+                except Exception:
+                    t = 0
+            items.append({"name": a.get("display_name") or a.get("name") or "", "desc": a.get("description") or "",
+                          "done": done, "time": t, "icon": a.get("icon_link") or ""})
+    hidden = len(data.get("hidden") or [])
+    total = int(data.get("total_achievements") or (len(items) + hidden))
+    items.sort(key=lambda x: (not x["done"], -x["time"], x["name"].casefold()))
+    return {"total": total, "done": sum(i["done"] for i in items), "items": items, "hidden": hidden}
+
+
 STEAM_APPDETAILS = "https://store.steampowered.com/api/appdetails"   # oyunun güncel kapak adresi buradan
 
 
@@ -962,7 +1040,7 @@ def run_gui():
             "surface": "#1C232A", "surfaceHigh": "#252E37", "line": "#2E3944",
             "text": "#E9EDF0", "muted": "#8D99A5", "faint": "#5E6A75",
             "accent": "#E8A93A", "accentHover": "#F2BC5C", "onAccent": "#1E1505",
-            "ok": "#6CC48F", "danger": "#E0695C", "queued": "#A8A0E8",
+            "ok": "#6CC48F", "danger": "#E0695C", "queued": "#A8A0E8", "chart": "#BD8526",
             "coverEmpty": "#1A2027", "overlay": "#CC0B0F13",
         },
         False: {  # aydınlık: gündüz rafı
@@ -970,7 +1048,7 @@ def run_gui():
             "surface": "#F4F6F8", "surfaceHigh": "#FFFFFF", "line": "#C7D0D7",
             "text": "#1C252D", "muted": "#56636F", "faint": "#8592A0",
             "accent": "#A8660A", "accentHover": "#8F5607", "onAccent": "#FFFFFF",
-            "ok": "#2F8A55", "danger": "#B5443A", "queued": "#5B4FC4",
+            "ok": "#2F8A55", "danger": "#B5443A", "queued": "#5B4FC4", "chart": "#A8660A",
             "coverEmpty": "#D3DAE0", "overlay": "#B3E4E9EC",
         },
     }
@@ -996,6 +1074,7 @@ def run_gui():
         text, muted, faint = _c("text"), _c("muted"), _c("faint")
         accent, accentHover, onAccent = _c("accent"), _c("accentHover"), _c("onAccent")
         ok, danger, queued, coverEmpty, overlay = _c("ok"), _c("danger"), _c("queued"), _c("coverEmpty"), _c("overlay")
+        chart = _c("chart")
         dark = Property(bool, lambda self: self._dark, notify=changed)
         displayFont = Property(str, lambda self: self._display, constant=True)
         bodyFont = Property(str, lambda self: self._body, constant=True)
@@ -1177,6 +1256,10 @@ def run_gui():
         freeChanged = Signal()
         diskChanged = Signal()
         wishChanged = Signal()
+        shelfChanged = Signal()
+        friendsChanged = Signal()
+        achievementsLoaded = Signal(str, "QVariantMap")
+        openGameRequested = Signal(QObject)
         localAdded = Signal(QObject)
         gridResults = Signal(str, "QVariantList", str)      # oyun, kapak önerileri, hata
         spaceProblem = Signal(str, str, str, str)           # oyun, gereken, boş, klasör
@@ -1396,6 +1479,11 @@ def run_gui():
             self.wish_timer.timeout.connect(self.checkWishlist)
             self.wish_timer.start()
             QTimer.singleShot(20000, self.checkWishlist)
+            # Oyundaki arkadaşlar: 2 dakikada bir (pencere açıkken)
+            self.friends_timer = QTimer(self, interval=2 * 60 * 1000)
+            self.friends_timer.timeout.connect(lambda: self.checkFriends(False))
+            self.friends_timer.start()
+            QTimer.singleShot(12000, lambda: self.checkFriends(True))
             # Güncelleme: açılıştan biraz sonra ve 12 saatte bir
             self.upd_timer = QTimer(self, interval=12 * 60 * 60 * 1000)
             self.upd_timer.timeout.connect(lambda: self.checkUpdates(False))
@@ -1524,10 +1612,15 @@ def run_gui():
             q = self._search.strip().casefold()
             plat = {0: None, 1: "steam", 2: "epic", 3: "local"}.get(self._platformFilter)
             mode = self._sortMode
+            cur = self.cfg.get("shelf", "")
+            shelf = self._shelf(cur) if cur and cur != "fav" else None
+            order = {k: i for i, k in enumerate(shelf["games"])} if shelf else None
 
             def sort_key(g):
                 fav = 0 if g.favorite else 1
                 title = g.title.casefold()
+                if mode == 4 and order is not None:
+                    return (order.get(g.key, 10 ** 6), title)
                 if mode == 1:
                     return (fav, -(g.lastPlayed or 0), title)
                 if mode == 2:
@@ -1540,7 +1633,9 @@ def run_gui():
                        if (not q or q in g.title.casefold())
                        and (not plat or g.platform == plat)
                        and (not self._onlyInstalled or g.state != NOT_INSTALLED)
-                       and (self._showHidden or not g.hidden)]
+                       and (self._showHidden or not g.hidden)
+                       and (cur != "fav" or g.favorite)
+                       and (order is None or g.key in order)]
             visible.sort(key=sort_key)
             self.model.set_items(visible)
 
@@ -1725,6 +1820,7 @@ def run_gui():
             first = not any(g.platform == "steam" for g in self.games.values())
             self.save_list_cache("steam", owned)
             self._steam_apply(owned)
+            self._record_steam_playtime(owned)
             self._flush_new("steam")
             if first and self.games:
                 self._play_intro()
@@ -2045,6 +2141,7 @@ def run_gui():
                 rec = self.data.setdefault("local_play", {}).setdefault(g.id, {"minutes": 0, "last": 0})
                 rec["last"] = int(started)
                 rec["minutes"] = rec.get("minutes", 0) + int((seconds or 0) // 60)
+                self._log_play(g.key, int((seconds or 0) // 60))
                 g.playtime, g.lastPlayed = rec["minutes"], rec["last"]
                 self.save_data()
                 if error:
@@ -2052,6 +2149,266 @@ def run_gui():
                 if self._sortMode in (1, 2):
                     self.relayout()
             self.run_background(job, done)
+
+        # ======================================================== kendi rafların
+        def _shelves(self):
+            return self.data.setdefault("shelves", [])
+
+        def _shelf(self, sid):
+            return next((s for s in self._shelves() if s["id"] == sid), None)
+
+        def _shelf_list(self):
+            return [{"id": s["id"], "name": s["name"], "count": sum(1 for k in s["games"] if k in self.games)}
+                    for s in self._shelves()]
+
+        shelves = Property("QVariantList", _shelf_list, notify=shelfChanged)
+
+        def _get_shelf(self):
+            return self.cfg.get("shelf", "")
+
+        def _set_shelf(self, v):
+            if v and v != "fav" and not self._shelf(v):
+                v = ""
+            if v == self.cfg.get("shelf", ""):
+                return
+            self.cfg["shelf"] = v
+            custom = bool(v) and v != "fav"
+            if custom and self._sortMode != 4:
+                self._sortMode = self.cfg["sort"] = 4      # kendi rafında senin dizdiğin sıra
+            elif not custom and self._sortMode == 4:
+                self._sortMode = self.cfg["sort"] = 0
+            write_json(CONFIG_FILE, self.cfg)
+            self.changed.emit()
+            self.shelfChanged.emit()
+            self.relayout()
+
+        currentShelf = Property(str, _get_shelf, _set_shelf, notify=shelfChanged)
+        currentShelfIsCustom = Property(bool, lambda self: bool(self._shelf(self.cfg.get("shelf", ""))), notify=shelfChanged)
+
+        def _shelves_changed(self, cur=None):
+            self.save_data()
+            self.shelfChanged.emit()
+            if cur is None or cur == self.cfg.get("shelf", ""):
+                self.relayout()
+
+        @Slot(str, str, result=str)
+        def addShelf(self, name, first_key=""):
+            name = name.strip() or "Yeni raf"
+            sid = hashlib.md5(f"{name}{time.time()}".encode()).hexdigest()[:8]
+            self._shelves().append({"id": sid, "name": name, "games": [first_key] if first_key else []})
+            self._shelves_changed()
+            if first_key and first_key in self.games:
+                self.toast.emit(f"'{name}' rafı oluşturuldu, {self.games[first_key].title} eklendi.", "ok")
+            return sid
+
+        @Slot(str, str)
+        def renameShelf(self, sid, name):
+            s = self._shelf(sid)
+            if s and name.strip():
+                s["name"] = name.strip()
+                self._shelves_changed(sid)
+
+        @Slot(str)
+        def deleteShelf(self, sid):
+            s = self._shelf(sid)
+            if not s:
+                return
+            self.data["shelves"] = [x for x in self._shelves() if x["id"] != sid]
+            if self.cfg.get("shelf") == sid:
+                self._set_shelf("")
+            self._shelves_changed()
+            self.toast.emit(f"'{s['name']}' rafı silindi. Oyunlar kütüphanende duruyor.", "info")
+
+        @Slot(str, str)
+        def addToShelf(self, sid, key):
+            if sid == "fav":
+                g = self._game(key)
+                if g and not g.favorite:
+                    self.toggleFavorite(key)
+                    self.toast.emit(f"{g.title} favorilere eklendi.", "ok")
+                return
+            s, g = self._shelf(sid), self._game(key)
+            if not s or not g:
+                return
+            if key in s["games"]:
+                self.toast.emit(f"{g.title} zaten '{s['name']}' rafında.", "info")
+                return
+            s["games"].append(key)
+            self._shelves_changed(sid)
+            self.toast.emit(f"{g.title} '{s['name']}' rafına eklendi.", "ok")
+
+        @Slot(str, str)
+        def removeFromShelf(self, sid, key):
+            s = self._shelf(sid)
+            if s and key in s["games"]:
+                s["games"].remove(key)
+                self._shelves_changed(sid)
+
+        @Slot(str, str, str)
+        def moveInShelf(self, sid, key, before_key):
+            """Raftaki oyunu, bırakıldığı oyunun yerine taşır."""
+            s = self._shelf(sid)
+            if not s or key == before_key or key not in s["games"] or before_key not in s["games"]:
+                return
+            games = s["games"]
+            src, dst = games.index(key), games.index(before_key)
+            games.pop(src)
+            games.insert(dst, key)
+            self._shelves_changed(sid)
+
+        @Slot(str, result="QVariantList")
+        def shelvesOf(self, key):
+            return [s["id"] for s in self._shelves() if key in s["games"]]
+
+        # ======================================================== oyundaki arkadaşlar
+        showFriends = _simple("showFriends", "show_friends")
+        friendsPlaying = Property("QVariantList", lambda self: getattr(self, "_friends", []), notify=friendsChanged)
+
+        @Slot(bool)
+        def checkFriends(self, force=False):
+            if not self.showFriends:
+                if getattr(self, "_friends", []):
+                    self._friends = []
+                    self.friendsChanged.emit()
+                return
+            if not force and getattr(self, "_window_hidden", False):
+                return          # pencere kapalıyken boşuna sorma
+            sid = str(self.cfg.get("steam_id") or "")
+            if self.cfg.get("steam_login") and WEB_OK:
+                def got(tok):
+                    if tok:
+                        s = str(jwt_payload(tok).get("sub") or sid)
+                        self.run_background(lambda: steam_friends_in_game(s, token=tok), self._friends_loaded)
+                self.steam_session.get_token(got)
+            elif self.cfg.get("steam_api_key") and sid:
+                key = self.cfg["steam_api_key"]
+                self.run_background(lambda: steam_friends_in_game(sid, key=key), self._friends_loaded)
+
+        def _friends_loaded(self, result, error):
+            if error:
+                if not getattr(self, "_friends_err_logged", False):
+                    LOG.info(f"Arkadaşlar alınamadı: {error}")
+                    self._friends_err_logged = True
+                return
+            for f in result:
+                f["owned"] = f"steam:{f['appid']}" in self.games
+            self._friends = result
+            self.friendsChanged.emit()
+
+        @Slot(str)
+        def joinFriend(self, steamid):
+            f = next((x for x in getattr(self, "_friends", []) if x["steamid"] == steamid), None)
+            if f and f.get("lobby"):
+                QDesktopServices.openUrl(QUrl(f"steam://joinlobby/{f['appid']}/{f['lobby']}/{f['steamid']}"))
+
+        @Slot(str)
+        def openFriendGame(self, appid):
+            g = self.games.get(f"steam:{appid}")
+            if g:
+                self.openGameRequested.emit(g)
+            else:
+                QDesktopServices.openUrl(QUrl(f"https://store.steampowered.com/app/{appid}"))
+
+        # ======================================================== oynama günlüğü ve istatistikler
+        def _log_play(self, key, minutes):
+            if minutes <= 0:
+                return
+            log = self.data.setdefault("play_log", {})
+            self.data.setdefault("play_log_since", int(time.time()))
+            day = time.strftime("%Y-%m-%d")
+            log.setdefault(day, {})
+            log[day][key] = log[day].get(key, 0) + int(minutes)
+            cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - 120 * 86400))
+            for d in [d for d in log if d < cutoff]:
+                log.pop(d)
+            self._save_data_later()
+
+        def _record_steam_playtime(self, owned):
+            """Steam süre farklarını güne yazar (Steam sadece toplam süreyi verir)."""
+            snap = self.data.setdefault("pt_snapshot", {})
+            first = not snap
+            for item in owned:
+                key, new = f"steam:{item['appid']}", int(item.get("playtime") or 0)
+                old = snap.get(key)
+                if old is not None and new > old and not first:
+                    self._log_play(key, new - old)
+                snap[key] = new
+            if first:
+                self.data.setdefault("play_log_since", int(time.time()))
+            self._save_data_later()
+
+        @Slot(result="QVariantMap")
+        def statsData(self):
+            games = list(self.games.values())
+            tr_days = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
+            log = self.data.get("play_log", {})
+            days = []
+            for i in range(13, -1, -1):
+                t = time.time() - i * 86400
+                key = time.strftime("%Y-%m-%d", time.localtime(t))
+                entry = log.get(key, {})
+                top = sorted(entry.items(), key=lambda kv: -kv[1])[:3]
+                lt = time.localtime(t)
+                days.append({"label": tr_days[lt.tm_wday], "date": tr_date(t), "minutes": sum(entry.values()),
+                             "games": ", ".join(self.games[k].title if k in self.games else "?" for k, _ in top)})
+            top10 = sorted((g for g in games if g.playtime), key=lambda g: -g.playtime)[:10]
+            plat = {}
+            for g in games:
+                name = {"steam": "Steam", "epic": "Epic", "local": "Bilgisayar"}[g.platform]
+                plat[name] = plat.get(name, 0) + (g.playtime or 0)
+            since = self.data.get("play_log_since", 0)
+            return {
+                "totalMinutes": sum(g.playtime or 0 for g in games),
+                "gameCount": len(games),
+                "installedCount": sum(1 for g in games if g.state != NOT_INSTALLED),
+                "familyCount": sum(1 for g in games if g.shared),
+                "recentMinutes": sum(d["minutes"] for d in days),
+                "days": days,
+                "top": [{"key": g.key, "title": g.title, "minutes": g.playtime} for g in top10],
+                "platforms": [{"name": k, "minutes": v} for k, v in sorted(plat.items(), key=lambda kv: -kv[1]) if v],
+                "since": tr_date(since) if since else "",
+                "trackedDays": int((time.time() - since) // 86400) + 1 if since else 0,
+            }
+
+        # ======================================================== başarımlar
+        @Slot(str)
+        def loadAchievements(self, key):
+            g = self._game(key)
+            if not g or g.platform == "local":
+                return
+            cache = getattr(self, "_ach_cache", {})
+            self._ach_cache = cache
+            hit = cache.get(key)
+            if hit and time.time() - hit[0] < 600:
+                self.achievementsLoaded.emit(key, hit[1])
+                return
+
+            def done(result, error):
+                data = dict(result or {"total": 0, "done": 0, "items": []})
+                data["error"] = str(error) if error else ""
+                if error:
+                    LOG.info(f"Başarımlar alınamadı: {g.title} | {error}")
+                else:
+                    cache[key] = (time.time(), data)
+                self.achievementsLoaded.emit(key, data)
+
+            if g.platform == "epic":
+                self.run_background(lambda: epic_achievements(g.id), done)
+                return
+            sid = str(self.cfg.get("steam_id") or "")
+            if self.cfg.get("steam_login") and WEB_OK:
+                def got(tok):
+                    if not tok:
+                        done(None, RuntimeError("Steam'e giriş yapman gerekiyor."))
+                        return
+                    s = str(jwt_payload(tok).get("sub") or sid)
+                    self.run_background(lambda: steam_achievements(g.id, s, token=tok), done)
+                self.steam_session.get_token(got)
+            elif self.cfg.get("steam_api_key") and sid:
+                k = self.cfg["steam_api_key"]
+                self.run_background(lambda: steam_achievements(g.id, sid, key=k), done)
+            else:
+                done(None, RuntimeError("Başarımları görmek için Steam'e giriş yap."))
 
         # ======================================================== sorun bildir
         @Slot()
@@ -2310,6 +2667,7 @@ def run_gui():
             self.steamConnected = True
             first = not any(g.platform == "steam" for g in self.games.values())
             self._steam_apply(owned)
+            self._record_steam_playtime(owned)
             self._flush_new("steam")
             if first and self.games:
                 self._play_intro()
@@ -3004,6 +3362,7 @@ def run_gui():
                 rec = self.data["epic_play"].setdefault(g.id, {"minutes": 0, "last": 0})
                 rec["last"] = int(time.time())
                 rec["minutes"] = rec.get("minutes", 0) + int((seconds or 0) // 60)
+                self._log_play(g.key, int((seconds or 0) // 60))
                 g.playtime, g.lastPlayed = rec["minutes"], rec["last"]
                 self.save_data()
                 if error or log:
