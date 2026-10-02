@@ -29,7 +29,7 @@ if exist "%~dp0kutuphane_onbellek.json" if not exist "%ONBELLEK%\kutuphane_onbel
 if exist "%~dp0kapak_onbellek\*.jpg" copy /Y "%~dp0kapak_onbellek\*.jpg" "%ONBELLEK%\kapak_onbellek\" >nul
 
 echo  [3/4] Program paketleniyor...
-py -m PyInstaller --noconfirm --clean --onedir --windowed --name OyunKutuphanem --icon "%~dp0icon.ico" --add-data "%~dp0qml;qml" --add-data "%~dp0fonts;fonts" --add-data "%~dp0icon.ico;." --add-data "%~dp0SURUM.txt;." --add-data "%~dp0guncelleme.txt;." --collect-all legendary --hidden-import psutil --hidden-import PySide6.QtQuickControls2 "%~dp0oyun_kutuphanem.py"
+py -m PyInstaller --noconfirm --clean --onedir --windowed --name OyunKutuphanem --icon "%~dp0icon.ico" --add-data "%~dp0qml;qml" --add-data "%~dp0fonts;fonts" --add-data "%~dp0icon.ico;." --add-data "%~dp0SURUM.txt;." --add-data "%~dp0guncelleme.txt;." --collect-all legendary --hidden-import psutil --hidden-import PySide6.QtQuickControls2 --hidden-import PySide6.QtWebEngineWidgets --hidden-import PySide6.QtWebEngineCore "%~dp0oyun_kutuphanem.py"
 if not exist "%~dp0dist\OyunKutuphanem\OyunKutuphanem.exe" goto hata
 echo  Kullanilmayan Qt parcalari ayiklaniyor...
 py "%~dp0paketi_ayikla.py" "%~dp0dist\OyunKutuphanem"

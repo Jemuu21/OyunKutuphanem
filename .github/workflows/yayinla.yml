@@ -47,7 +47,7 @@ jobs:
 
       - name: Programi paketle
         if: steps.surum.outputs.exists == 'false'
-        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name OyunKutuphanem --icon icon.ico --add-data "qml;qml" --add-data "fonts;fonts" --add-data "icon.ico;." --add-data "SURUM.txt;." --add-data "guncelleme.txt;." --collect-all legendary --hidden-import psutil --hidden-import PySide6.QtQuickControls2 oyun_kutuphanem.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name OyunKutuphanem --icon icon.ico --add-data "qml;qml" --add-data "fonts;fonts" --add-data "icon.ico;." --add-data "SURUM.txt;." --add-data "guncelleme.txt;." --collect-all legendary --hidden-import psutil --hidden-import PySide6.QtQuickControls2 --hidden-import PySide6.QtWebEngineWidgets --hidden-import PySide6.QtWebEngineCore oyun_kutuphanem.py
 
       - name: Kullanilmayan Qt parcalarini ayikla
         if: steps.surum.outputs.exists == 'false'

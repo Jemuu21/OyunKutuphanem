@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Bu adla birebir eşleşen klasörler silinir
 DIRS = {
-    "qtwebengine", "qtwebengine_locales", "qt3d", "qtquick3d", "qtcharts", "qtdatavisualization",
+    "qt3d", "qtquick3d", "qtcharts", "qtdatavisualization",
     "qtgraphs", "qtmultimedia", "qtlocation", "qtpositioning", "qtsensors", "qtwebview",
     "qtwebchannel", "qtwebsockets", "qtremoteobjects", "qtscxml", "qttexttospeech", "qttest",
     "qt5compat", "qtwayland", "virtualkeyboard", "pdf", "scene3d", "scene2d",
@@ -18,12 +18,15 @@ DIRS = {
     "renderers", "geometryloaders", "renderplugins", "webview", "designer", "qmltooling",
 }
 # Adında bunlardan biri geçen dosyalar silinir
+# Not: uygulama içi giriş penceresi tarayıcı motorunu kullanır; "webengine", "webchannel" ve
+# "positioning" parçaları ona gerekli, silinmez.
 FILE_PARTS = (
-    "webengine", "qt63d", "qt3d", "quick3d", "qt6charts", "qtcharts", "datavisualization",
-    "qt6graphs", "qtgraphs", "multimedia", "qt6location", "qtlocation", "positioning",
-    "qt6sensors", "qtsensors", "webview", "webchannel", "websockets", "remoteobjects",
+    "qt63d", "qt3d", "quick3d", "qt6charts", "qtcharts", "datavisualization",
+    "qt6graphs", "qtgraphs", "multimedia", "qt6location", "qtlocation",
+    "qt6sensors", "qtsensors", "webview", "websockets", "remoteobjects",
     "scxml", "texttospeech", "virtualkeyboard", "qt6pdf", "qtpdf", "spatialaudio",
     "avcodec", "avformat", "avutil", "swresample", "swscale",
+    "devtools_resources",      # tarayıcının geliştirici araçları, giriş penceresinde gerekmez
 )
 
 
@@ -35,6 +38,11 @@ def prune(root):
             continue
         name = p.name.casefold()
         try:
+            if p.is_file() and p.parent.name.casefold() == "qtwebengine_locales" and p.suffix == ".pak" \
+                    and p.stem not in ("en-US", "tr"):
+                removed += p.stat().st_size      # tarayıcının diğer dil dosyaları
+                p.unlink()
+                continue
             if p.is_dir() and name in DIRS and p != root:
                 removed += sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
                 shutil.rmtree(p)

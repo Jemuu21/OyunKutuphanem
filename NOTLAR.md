@@ -1,4 +1,6 @@
-- İndirme sırasında kartta "Duraklat" ve "İptal et" butonları var. Duraklatınca "Devam et" ve "İptal et" çıkıyor.
-- İptal et, indirmeyi durdurup o ana kadar inen bütün dosyaları siliyor ve kaç GB yer açıldığını söylüyor.
-- Bir güncellemeyi iptal edersen oyunun kendisi silinmiyor, sadece güncelleme duruyor.
-- Steam indirmelerinde İptal et, Steam'in kaldırma penceresini açıyor; Steam yarım inen dosyaları orada siliyor.
+- Artık kod kopyalayıp yapıştırmak yok: Steam ve Epic için "ile giriş yap" butonuna basınca programın içinde kendi giriş sayfaları açılıyor. Giriş yapınca pencere kendiliğinden kapanıyor.
+- Steam için API anahtarına gerek kalmadı. Giriş yapınca kendi oyunların ve Steam ailende paylaşılan oyunlar birlikte geliyor ve kendiliğinden güncelleniyor.
+- Steam'e telefondaki Steam uygulamasıyla QR kod okutarak da girebilirsin. Şifren programa kaydedilmez.
+- Steam oturumun sona ererse rafın üstünde bir uyarı çıkıyor, tek tıkla tekrar giriş yapabiliyorsun.
+- Ayarlar'da "Steam'den çıkış yap" ve "Epic'ten çıkış yap" butonları var.
+- Kurulum dosyası, içine giriş sayfaları için bir tarayıcı motoru eklendiği için büyüdü.

@@ -50,7 +50,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: ["Oyun rafını kuralım", "Steam hesabını bağla", "Epic Games hesabını bağla", "Rafın hazır"][ob.step]
+                    text: ["Oyun rafını kuralım", "Steam ile giriş yap", "Epic Games ile giriş yap", "Rafın hazır"][ob.step]
                     color: theme.text
                     font.family: theme.displayFont
                     font.pixelSize: 30
@@ -62,16 +62,23 @@ Rectangle {
                 Text {
                     visible: ob.step === 0
                     Layout.fillWidth: true
-                    text: "Steam ve Epic oyunlarını tek bir rafta toplayacağız. Kurulu oyunların renkli, kurulu olmayanlar gri durur ve indirdikçe renklenir.\n\nİki hesabı da bağlamak isteğe bağlı. Bir adımı atlarsan sonra Ayarlar'dan bağlayabilirsin."
+                    text: "Steam ve Epic oyunlarını tek bir rafta toplayacağız. Kurulu oyunların renkli, kurulu olmayanlar gri durur ve indirdikçe renklenir.\n\nYapman gereken tek şey iki hesabına da giriş yapmak. Bir adımı atlarsan sonra Ayarlar'dan bağlayabilirsin."
                     color: theme.text
                     font.pixelSize: 15
                     wrapMode: Text.WordWrap
                     lineHeight: 1.15
                 }
                 // 2. adım
-                SteamPanel { visible: ob.step === 1; Layout.fillWidth: true }
+                SteamPanel {
+                    visible: ob.step === 1; Layout.fillWidth: true
+                    onConnected: autoNext.restart()     // giriş bitince bir sonraki adıma kendiliğinden geç
+                }
                 // 3. adım
-                EpicPanel { visible: ob.step === 2; Layout.fillWidth: true }
+                EpicPanel {
+                    visible: ob.step === 2; Layout.fillWidth: true
+                    onConnected: autoNext.restart()
+                }
+                Timer { id: autoNext; interval: 1400; onTriggered: if (ob.step === 1 || ob.step === 2) ob.step += 1 }
                 // 4. adım
                 ColumnLayout {
                     visible: ob.step === 3

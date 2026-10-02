@@ -420,7 +420,12 @@ def steam_owned_games(api_key, steam_id):
 # ---- Steam Aile kütüphanesi -------------------------------------------------
 # Steam'in aile servisleri API anahtarıyla değil, mağazaya giriş yapmış kullanıcının
 # kısa süreli web jetonuyla çalışır. Jeton bu sayfada görünür (Steam'e giriş yapılı tarayıcıda).
-STEAM_TOKEN_PAGE = "https://store.steampowered.com/pointssummary/ajaxgetasyncconfig"
+STEAM_STORE = "https://store.steampowered.com"
+STEAM_TOKEN_PAGE = STEAM_STORE + "/pointssummary/ajaxgetasyncconfig"
+EPIC_CLIENT_ID = "34a02cf8f4414e29b15921876da36f9a"     # Legendary'nin kullandığı Epic istemci kimliği
+EPIC_LOGIN_URL = ("https://www.epicgames.com/id/login?redirectUrl="
+                  "https%3A%2F%2Fwww.epicgames.com%2Fid%2Fapi%2Fredirect%3FclientId%3D" + EPIC_CLIENT_ID +
+                  "%26responseType%3Dcode")
 
 
 def steam_token_from_text(text):
@@ -793,6 +798,19 @@ def run_gui():
     from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
     from PySide6.QtQuickControls2 import QQuickStyle
     from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
+    # Uygulama içi giriş pencereleri için tarayıcı motoru (QApplication'dan önce yüklenmeli)
+    from PySide6.QtCore import QCoreApplication
+    QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    if load_config().get("software_render"):
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "") + " --disable-gpu").strip()
+    try:
+        from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineSettings
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+        WEB_OK = True
+    except Exception as e:  # noqa
+        WEB_OK = False
+        LOG.warning(f"Tarayıcı motoru yüklenemedi, giriş elle yapılacak: {e}")
 
     prepare_user_dirs()
     setup_logging()
@@ -954,6 +972,160 @@ def run_gui():
         def _run(self, fn):
             fn()
 
+    # ------------------------------------------------------------ uygulama içi giriş
+    def clean_ua(profile):
+        """Tarayıcı kimliğinden 'QtWebEngine' ifadesini çıkarır, siteler normal Chrome görsün."""
+        profile.setHttpUserAgent(re.sub(r"\s*QtWebEngine/\S+", "", profile.httpUserAgent()))
+
+    if WEB_OK:
+        class LoginWindow(QWidget):
+            """Steam ya da Epic'in kendi giriş sayfasını gösteren küçük pencere."""
+            finished = Signal(str)
+
+            def __init__(self, title, profile, url, note):
+                super().__init__(None, Qt.WindowType.Window)
+                self.setWindowTitle(title)
+                if ICON_FILE.exists():
+                    self.setWindowIcon(QIcon(str(ICON_FILE)))
+                self.resize(560, 780)
+                pal = PALETTES[True]
+                self.setStyleSheet(f"QWidget {{ background: {pal['bg']}; }} QLabel {{ color: {pal['text']}; "
+                                   f"padding: 12px 16px; font-size: 13px; }}")
+                lay = QVBoxLayout(self)
+                lay.setContentsMargins(0, 0, 0, 0)
+                lay.setSpacing(0)
+                info = QLabel(note)
+                info.setWordWrap(True)
+                lay.addWidget(info)
+                self.view = QWebEngineView(self)
+                self.page = QWebEnginePage(profile, self.view)
+                self.view.setPage(self.page)
+                lay.addWidget(self.view, 1)
+                self._done = False
+                self.view.load(QUrl(url))
+
+            def finish(self, value):
+                if self._done:
+                    return
+                self._done = True
+                self.finished.emit(value)
+                self.close()
+
+            def closeEvent(self, e):
+                if not self._done:
+                    self._done = True
+                    self.finished.emit("")
+                super().closeEvent(e)
+                self.view.setPage(None)
+                self.page.deleteLater()
+                self.deleteLater()
+
+        class SteamSession(QObject):
+            """Steam'e programın içinde giriş yapılmış oturum. Girişi hatırlar, jetonu gerektikçe yeniler.
+            Jeton sadece bellekte tutulur, diske yazılmaz."""
+            loginCookie = Signal()
+
+            def __init__(self, parent):
+                super().__init__(parent)
+                store_path = DATA_DIR / "giris" / "steam"
+                store_path.mkdir(parents=True, exist_ok=True)
+                self.profile = QWebEngineProfile("oyunkutuphanem-steam", self)
+                self.profile.setPersistentStoragePath(str(store_path))
+                self.profile.setCachePath(str(CACHE_ROOT / "giris_onbellek" / "steam"))
+                self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+                clean_ua(self.profile)
+                self.profile.cookieStore().cookieAdded.connect(self._cookie_added)
+                self.profile.cookieStore().loadAllCookies()
+                self._token, self._exp = "", 0
+                self._waiters, self._page, self._win = [], None, None
+
+            def _cookie_added(self, c):
+                if bytes(c.name()).decode(errors="ignore") == "steamLoginSecure":
+                    self.loginCookie.emit()
+
+            def get_token(self, cb, force=False):
+                if not force and self._token and self._exp - time.time() > 600:
+                    cb(self._token)
+                    return
+                self._waiters.append(cb)
+                if self._page is not None:
+                    return
+                page = QWebEnginePage(self.profile, self)
+                page.settings().setAttribute(QWebEngineSettings.WebAttribute.AutoLoadImages, False)
+                self._page = page
+                stage = {"n": 0}
+                self._timer = QTimer(self, singleShot=True, interval=45000)
+                self._timer.timeout.connect(lambda: self._finish(""))
+
+                def loaded(_ok):
+                    if stage["n"] == 0:
+                        # Mağaza sayfası açılınca Steam süresi dolan oturumu kendisi yeniler; sonra jetonu oku
+                        stage["n"] = 1
+                        QTimer.singleShot(1500, lambda: self._page is page and page.load(QUrl(STEAM_STORE + "/pointssummary/ajaxgetasyncconfig")))
+                    elif stage["n"] == 1:
+                        stage["n"] = 2
+                        page.toPlainText(lambda text: self._finish(steam_token_from_text(text)))
+                page.loadFinished.connect(loaded)
+                self._timer.start()
+                page.load(QUrl(STEAM_STORE + "/"))
+
+            def _finish(self, tok):
+                if self._page is None:
+                    return
+                page, self._page = self._page, None
+                self._timer.stop()
+                QTimer.singleShot(0, page.deleteLater)
+                exp = jwt_payload(tok).get("exp") if tok else 0
+                if tok and exp and exp < time.time():
+                    tok = ""
+                self._token, self._exp = tok, (exp or time.time() + 3600) if tok else 0
+                LOG.info("Steam jetonu " + ("alındı" if tok else "alınamadı (giriş gerekli)"))
+                waiters, self._waiters = self._waiters, []
+                for w in waiters:
+                    w(tok)
+
+            def login(self, cb):
+                """Giriş penceresini açar; giriş bitince cb(jeton) çağrılır (vazgeçilirse boş)."""
+                if self._win is not None:
+                    self._win.raise_()
+                    self._win.activateWindow()
+                    return
+                win = LoginWindow("Steam ile giriş", self.profile, STEAM_STORE + "/login/",
+                                  "Steam'in kendi giriş sayfası. Telefondaki Steam uygulamasıyla QR kodu okutabilir "
+                                  "ya da kullanıcı adınla girebilirsin. Şifren programa kaydedilmez. "
+                                  "'Beni hatırla' seçili kalsın ki tekrar sormasın.")
+                self._win = win
+                fresh = {"cookie": False}
+
+                def on_cookie():
+                    fresh["cookie"] = True
+                    QTimer.singleShot(2000, check)
+
+                def check(*_):
+                    if fresh["cookie"] and "/login" not in win.view.url().toString():
+                        win.finish("ok")
+                self.loginCookie.connect(on_cookie)
+                win.page.loadFinished.connect(check)
+
+                def done(value):
+                    try:
+                        self.loginCookie.disconnect(on_cookie)
+                    except Exception:
+                        pass
+                    self._win = None
+                    if not value:
+                        cb("")
+                        return
+                    self._token = ""
+                    self.get_token(cb, force=True)
+                win.finished.connect(done)
+                win.show()
+
+            def logout(self):
+                self.profile.cookieStore().deleteAllCookies()
+                self.profile.clearHttpCache()
+                self._token, self._exp = "", 0
+
     # ------------------------------------------------------------ ana yönetici
     class Backend(QObject):
         changed = Signal()          # ayarlar / filtreler / durum yazıları
@@ -997,9 +1169,12 @@ def run_gui():
             self._steamMsg, self._epicMsg = "Steam: bekleniyor", "Epic: bekleniyor"
             self._epicAccount, self._downloadSummary = "", ""
             self._steamConnected = bool((self.cfg.get("steam_api_key") and self.cfg.get("steam_profile"))
-                                        or self.cfg.get("steam_via_token"))
+                                        or self.cfg.get("steam_via_token") or self.cfg.get("steam_login"))
             self._needsOnboarding = (not self.cfg.get("onboarded") and not self.cfg.get("steam_api_key")
-                                     and not self.cfg.get("steam_via_token"))
+                                     and not self.cfg.get("steam_via_token") and not self.cfg.get("steam_login"))
+            self._steamExpired = False
+            self.steam_session = SteamSession(self) if WEB_OK else None
+            self._epic_profiles = []
             self._introActive = False
             self._watch = set()          # yeni oyun takibi açık olan platformlar
             self._cancelling = set()     # iptal edilen ve temizlenecek indirmeler
@@ -1066,6 +1241,9 @@ def run_gui():
         epicAccount = _simple("epicAccount", typ=str)
         downloadSummary = _simple("downloadSummary", typ=str)
         steamConnected = _simple("steamConnected")
+        steamExpired = _simple("steamExpired")
+        webLoginAvailable = Property(bool, lambda self: WEB_OK, constant=True)
+        steamLoggedIn = Property(bool, lambda self: bool(self.cfg.get("steam_login")), notify=changed)
         needsOnboarding = _simple("needsOnboarding")
         introActive = _simple("introActive")
 
@@ -1452,6 +1630,9 @@ def run_gui():
 
         def load_steam(self, report=False):
             cfg = dict(self.cfg)
+            if cfg.get("steam_login") and self.steam_session:
+                self._load_steam_session(report)
+                return
             if not cfg.get("steam_api_key") or not cfg.get("steam_profile"):
                 # Hesap bağlı değilken de bilgisayarda kurulu Steam oyunlarını göster
                 via_token = bool(self.cfg.get("steam_via_token"))
@@ -1844,6 +2025,129 @@ def run_gui():
         @Slot(result=str)
         def diskTotalText(self):
             return format_bytes(sum(g.sizeBytes or 0 for g in getattr(self, "_disk_list", [])))
+
+        # ======================================================== uygulama içi giriş
+        def _load_steam_session(self, report=False):
+            self.steamMsg = "Steam güncelleniyor"
+
+            def got(tok):
+                if not tok:
+                    self.steamExpired = True
+                    cached = read_json(LIST_CACHE, {}).get("steam") or []
+                    self._steam_apply(cached)
+                    self.steamMsg = "Steam oturumu sona erdi, tekrar giriş yap"
+                    self.relayout()
+                    if report:
+                        self.steamResult.emit(False, "Giriş tamamlanamadı. Tekrar dene.")
+                    return
+                self.steamExpired = False
+                self.run_background(lambda: steam_fetch_with_token(tok),
+                                    lambda r, e: self._steam_token_loaded(r, e, report))
+            self.steam_session.get_token(got)
+
+        def _steam_token_loaded(self, result, error, report):
+            if error:
+                LOG.warning(f"Steam listesi (oturumla) alınamadı: {error}")
+                self.steam_session._token = ""          # bir dahaki sefere jetonu yeniden al
+                self._steam_apply(read_json(LIST_CACHE, {}).get("steam") or [])
+                self.steamMsg = "Steam: liste güncellenemedi"
+                if report:
+                    self.steamResult.emit(False, str(error))
+                return
+            owned, family = result["owned"], result["family"]
+            LOG.info(f"Steam (oturum): {len(owned)} kendi oyunu, {len(family)} aile oyunu")
+            self.save_list_cache("steam", owned)
+            self.save_list_cache("steam_family", {"apps": family, "in_family": result["in_family"],
+                                                  "updated": result["updated"]})
+            self.steamConnected = True
+            first = not any(g.platform == "steam" for g in self.games.values())
+            self._steam_apply(owned)
+            self._flush_new("steam")
+            if first and self.games:
+                self._play_intro()
+            self.changed.emit()
+            self.relayout()
+            if report:
+                fam = f" ve {len(family)} aile oyunu" if result["in_family"] else ""
+                self.steamResult.emit(True, f"Giriş yapıldı: {len(owned)} oyun{fam} rafa eklendi.")
+
+        @Slot()
+        def loginSteam(self):
+            if not self.steam_session:
+                return
+
+            def done(tok):
+                if not tok:
+                    self.steamResult.emit(False, "")     # pencere kapatıldı
+                    return
+                self.cfg["steam_login"] = True
+                self.cfg.pop("steam_via_token", None)
+                write_json(CONFIG_FILE, self.cfg)
+                self.steamExpired = False
+                self._suppress_new = True
+                LOG.info("Steam'e uygulama içinden giriş yapıldı")
+                self.changed.emit()
+                self._load_steam_session(report=True)
+            self.steam_session.login(done)
+
+        @Slot()
+        def logoutSteam(self):
+            if self.steam_session:
+                self.steam_session.logout()
+            self.cfg["steam_login"] = False
+            write_json(CONFIG_FILE, self.cfg)
+            self.save_list_cache("steam", [])
+            self.save_list_cache("steam_family", {})
+            self.steamExpired = False
+            self.steamConnected = bool(self.cfg.get("steam_api_key") and self.cfg.get("steam_profile"))
+            LOG.info("Steam oturumu kapatıldı")
+            self.changed.emit()
+            self.load_steam()
+            self.toast.emit("Steam'den çıkış yapıldı. Bilgisayarındaki kurulu Steam oyunları rafta kalır.", "info")
+
+        @Slot()
+        def loginEpic(self):
+            if not WEB_OK:
+                return
+            profile = QWebEngineProfile(self)      # gizli pencere: Epic girişi sadece kod almak için
+            clean_ua(profile)
+            self._epic_profiles.append(profile)
+            win = LoginWindow("Epic Games ile giriş", profile, EPIC_LOGIN_URL,
+                              "Epic'in kendi giriş sayfası. Giriş yapınca pencere kendiliğinden kapanır. "
+                              "Şifren programa kaydedilmez.")
+
+            def check(*_):
+                if "/id/api/redirect" in win.view.url().toString():
+                    def read(text):
+                        m = re.search(r'"authorizationCode"\s*:\s*"([^"]+)"', text or "")
+                        if m:
+                            win.finish(m.group(1))
+                    win.page.toPlainText(read)
+            win.page.loadFinished.connect(check)
+
+            def done(code):
+                if code:
+                    LOG.info("Epic giriş kodu yakalandı")
+                    self.submitEpicCode(code)
+                else:
+                    self.epicLoginResult.emit(False, "")
+            win.finished.connect(done)
+            win.show()
+
+        @Slot()
+        def logoutEpic(self):
+            def job():
+                legendary_run("-y", "auth", "--delete", timeout=60)
+
+            def done(_, error):
+                self.epicAccount = ""
+                self.save_list_cache("epic", {})
+                self.remove_platform("epic", set())
+                self.epicMsg = "Epic bağlı değil"
+                self.relayout()
+                LOG.info("Epic oturumu kapatıldı")
+                self.toast.emit("Epic'ten çıkış yapıldı. Kurduğun Epic oyunları silinmedi.", "info")
+            self.run_background(job, done)
 
         @Slot()
         def openSteamTokenPage(self):

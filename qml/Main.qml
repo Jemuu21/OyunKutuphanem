@@ -252,6 +252,16 @@ ApplicationWindow {
                 onClicked: appRoot.askUpdate()
             }
         }
+        TopBanner {   // Steam oturumu bittiyse
+            Layout.fillWidth: true
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            Layout.bottomMargin: 8
+            visible: backend.steamLoggedIn && backend.steamExpired
+            mark: theme.danger
+            text: "Steam oturumun sona ermiş, oyun listen güncellenemiyor."
+            AppButton { kind: "primary"; compact: true; text: "Steam ile giriş yap"; onClicked: backend.loginSteam() }
+        }
         TopBanner {   // Epic ücretsiz oyun şeridi
             Layout.fillWidth: true
             Layout.leftMargin: 24

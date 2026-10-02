@@ -9,26 +9,66 @@ ColumnLayout {
     property bool busy: false
     property string result: ""
     property bool resultOk: false
-    property bool relogin: false
     readonly property bool linked: backend.epicAccount !== ""
     signal connected()
     spacing: 10
 
+    property bool manual: false
     Text {
         Layout.fillWidth: true
-        text: ep.linked ? "Bağlı Epic hesabı: " + backend.epicAccount : "Epic oyunlarını görmek için hesabına bir kere giriş yapman yeterli."
+        text: ep.linked ? "Bağlı Epic hesabı: " + backend.epicAccount : "Epic oyunlarını görmek için hesabınla bir kere giriş yapman yeterli."
         color: theme.text
         font.pixelSize: 14
         wrapMode: Text.WordWrap
     }
-    AppButton {
-        visible: ep.linked && !ep.relogin
-        text: "Başka bir hesapla bağlan"
-        onClicked: ep.relogin = true
+    RowLayout {
+        spacing: 8
+        AppButton {
+            visible: backend.webLoginAvailable && !ep.linked
+            kind: "primary"
+            text: ep.busy ? "Giriş penceresi açık" : "Epic ile giriş yap"
+            enabled: !ep.busy
+            onClicked: { ep.busy = true; ep.result = ""; backend.loginEpic() }
+        }
+        AppButton {
+            visible: ep.linked
+            kind: "ghost"
+            text: "Epic'ten çıkış yap"
+            onClicked: backend.logoutEpic()
+        }
     }
+    Text {
+        Layout.fillWidth: true
+        visible: backend.webLoginAvailable && !ep.linked
+        text: "Programın içinde Epic'in kendi giriş sayfası açılır, giriş yapınca kendiliğinden kapanır. Şifren programa kaydedilmez."
+        color: theme.muted
+        font.pixelSize: 12
+        wrapMode: Text.WordWrap
+    }
+    Text {
+        Layout.fillWidth: true
+        visible: ep.result !== "" && !ep.manualVisible
+        text: ep.result
+        color: ep.resultOk ? theme.ok : theme.danger
+        font.pixelSize: 13
+        wrapMode: Text.WordWrap
+    }
+    AbstractButton {
+        id: manualToggle
+        visible: backend.webLoginAvailable && !ep.linked
+        hoverEnabled: true
+        onClicked: ep.manual = !ep.manual
+        contentItem: Text {
+            text: (ep.manual ? "▾ " : "▸ ") + "Giriş penceresi açılmazsa: elle bağlan"
+            color: manualToggle.hovered ? theme.text : theme.muted
+            font.pixelSize: 13
+        }
+        background: Item {}
+    }
+    readonly property bool manualVisible: !ep.linked && (ep.manual || !backend.webLoginAvailable)
     ColumnLayout {
         Layout.fillWidth: true
-        visible: !ep.linked || ep.relogin
+        visible: ep.manualVisible
         spacing: 10
         Repeater {
             model: [
@@ -101,7 +141,7 @@ ColumnLayout {
             ep.resultOk = ok
             if (ok) {
                 codeField.text = ""
-                ep.relogin = false
+                ep.manual = false
                 ep.connected()
             }
         }
