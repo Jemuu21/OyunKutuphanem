@@ -1,3 +1,1 @@
-- Pencerenin üstü artık macOS tarzı: Windows'un başlık çubuğu kalktı, sol üstte kırmızı (kapat), sarı (küçült) ve yeşil (büyüt) butonlar var. Fareyle üstlerine gelince işaretleri görünüyor.
-- "Oyun Kütüphanem" yazısı artık sadece bir kez görünüyor.
-- Pencereyi üstteki boş şeritten tutup taşıyabilir, çift tıklayıp ekranı kaplatabilir, kenarlarından ve köşelerinden boyutlandırabilirsin.
+- Escape from Tarkov, TBH: Task Bar Hero gibi yeni çıkan Steam oyunlarının kapak resimleri artık geliyor. Steam bu oyunların resimlerini farklı bir adreste tutuyordu, program artık doğru adresi Steam'e sorup buluyor.

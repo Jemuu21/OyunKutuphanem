@@ -509,6 +509,9 @@ def check_github_update(repo, current):
             "name": assets[0]["name"]}
 
 
+STEAM_APPDETAILS = "https://store.steampowered.com/api/appdetails"   # oyunun güncel kapak adresi buradan
+
+
 def steam_header(appid):
     return f"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg"
 
@@ -1279,6 +1282,7 @@ def run_gui():
                 r2.finished.connect(lambda: self._cover_done(r2, g, color, gray))
                 reply.deleteLater()
                 return
+            ok_img = False
             if reply.error() == QNetworkReply.NetworkError.NoError:
                 img = QImage()
                 if img.loadFromData(reply.readAll()):
@@ -1287,7 +1291,43 @@ def run_gui():
                     img.save(str(color), "JPG", 90)
                     img.convertToFormat(QImage.Format.Format_Grayscale8).save(str(gray), "JPG", 88)
                     self._set_cover(g, color, gray)
+                    ok_img = True
             reply.deleteLater()
+            if not ok_img and g.platform == "steam" and not getattr(g, "_asked_store", False):
+                # Yeni oyunların kapağı Steam'de kodlu bir adreste duruyor; doğru adresi mağazaya sor
+                self._ask_steam_store(g, color, gray)
+
+        def _ask_steam_store(self, g, color, gray):
+            g._asked_store = True
+            missing = self.data.setdefault("cover_missing", {})
+            if time.time() - missing.get(g.id, 0) < 7 * 86400:
+                return   # bu hafta zaten sorduk, kapağı yok
+            req = QNetworkRequest(QUrl(f"{STEAM_APPDETAILS}?appids={g.id}&filters=basic"))
+            reply = self.net.get(req)
+
+            def done():
+                url = ""
+                if reply.error() == QNetworkReply.NetworkError.NoError:
+                    try:
+                        info = json.loads(bytes(reply.readAll()).decode("utf-8")).get(g.id) or {}
+                        data = info.get("data") or {}
+                        url = data.get("header_image") or data.get("capsule_image") or ""
+                    except Exception:
+                        url = ""
+                    if not url:
+                        missing[g.id] = int(time.time())   # Steam'de de kapağı yok, bir hafta sorma
+                        self._save_data_later()
+                reply.deleteLater()
+                if url:
+                    r2 = self.net.get(QNetworkRequest(QUrl(url)))
+                    r2.finished.connect(lambda: self._cover_done(r2, g, color, gray))
+            reply.finished.connect(done)
+
+        def _save_data_later(self):
+            if not hasattr(self, "_save_timer"):
+                self._save_timer = QTimer(self, singleShot=True, interval=3000)
+                self._save_timer.timeout.connect(self.save_data)
+            self._save_timer.start()
 
         @staticmethod
         def _set_cover(g, color, gray):
