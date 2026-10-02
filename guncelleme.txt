@@ -1,0 +1,2 @@
+# Otomatik güncellemenin bakacağı GitHub deposu (kullaniciadi/depoadi).
+Jemuu21/OyunKutuphanem

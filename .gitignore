@@ -1,0 +1,12 @@
+# Derleme çıktıları
+build/
+dist/
+*.spec
+__pycache__/
+OyunKutuphanemKurulum.exe
+
+# Kişisel dosyalar: asla depoya girmemeli
+ayarlar.json
+kutuphane_verisi.json
+kutuphane_onbellek.json
+kapak_onbellek/

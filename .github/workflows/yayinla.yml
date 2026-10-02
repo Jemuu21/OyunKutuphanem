@@ -1,0 +1,66 @@
+# SURUM.txt değişince Windows'ta kurulum dosyasını oluşturur ve yeni sürüm olarak yayınlar.
+# Kurulu programlar yeni sürümü buradan görüp kendini günceller.
+name: Kurulum dosyasini olustur ve yayinla
+
+on:
+  push:
+    branches: [main]
+    paths: ["SURUM.txt"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yayin
+  cancel-in-progress: false
+
+jobs:
+  yayinla:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Surum numarasini oku
+        id: surum
+        shell: pwsh
+        run: |
+          $v = (Get-Content SURUM.txt | Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') } | Select-Object -First 1).Trim()
+          "ver=$v" >> $env:GITHUB_OUTPUT
+          gh release view "v$v" --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) { "exists=true" >> $env:GITHUB_OUTPUT; Write-Host "v$v zaten yayinlanmis, atlaniyor." }
+          else { "exists=false" >> $env:GITHUB_OUTPUT }
+          exit 0
+
+      - uses: actions/setup-python@v5
+        if: steps.surum.outputs.exists == 'false'
+        with:
+          python-version: "3.12"
+
+      - name: Gerekli parcalari kur
+        if: steps.surum.outputs.exists == 'false'
+        run: python -m pip install --upgrade pip pyinstaller PySide6 requests legendary-gl psutil
+
+      - name: Programi paketle
+        if: steps.surum.outputs.exists == 'false'
+        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name OyunKutuphanem --icon icon.ico --add-data "qml;qml" --add-data "fonts;fonts" --add-data "icon.ico;." --add-data "SURUM.txt;." --add-data "guncelleme.txt;." --collect-all legendary --hidden-import psutil --hidden-import PySide6.QtQuickControls2 oyun_kutuphanem.py
+
+      - name: Kullanilmayan Qt parcalarini ayikla
+        if: steps.surum.outputs.exists == 'false'
+        run: python paketi_ayikla.py dist/OyunKutuphanem
+
+      - name: Kurulum dosyasini olustur
+        if: steps.surum.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc /Q "/DAppVersion=${{ steps.surum.outputs.ver }}" OyunKutuphanem.iss
+          if (-not (Test-Path OyunKutuphanemKurulum.exe)) { throw "Kurulum dosyasi olusmadi" }
+          Write-Host ("Kurulum dosyasi: {0:N1} MB" -f ((Get-Item OyunKutuphanemKurulum.exe).Length / 1MB))
+
+      - name: Yayinla
+        if: steps.surum.outputs.exists == 'false'
+        run: gh release create "v${{ steps.surum.outputs.ver }}" OyunKutuphanemKurulum.exe --repo "${{ github.repository }}" --title "Oyun Kutuphanem ${{ steps.surum.outputs.ver }}" --notes-file NOTLAR.md
