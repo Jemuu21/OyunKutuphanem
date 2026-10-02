@@ -8,6 +8,7 @@ AppMenu {
     readonly property bool has: !!game
     readonly property bool epic: has && game.platform === "epic"
     readonly property bool canUninstall: has && game.state === "installed"
+    readonly property bool local: has && game.platform === "local"
 
     AppMenuItem { text: "Ayrıntılar"; onTriggered: appRoot.openDetail(menu.game) }
     AppMenuItem {
@@ -51,8 +52,9 @@ AppMenu {
         onTriggered: backend.toggleHidden(menu.game.key)
     }
     AppMenuSeparator { visible: menu.canUninstall }
+    AppMenuItem { text: "Adını değiştir…"; visible: menu.local; onTriggered: localDialog.openRename(menu.game) }
     AppMenuItem {
-        text: "Kaldır"
+        text: menu.local ? "Raftan kaldır" : "Kaldır"
         danger: true
         visible: menu.canUninstall
         onTriggered: appRoot.askUninstall(menu.game)

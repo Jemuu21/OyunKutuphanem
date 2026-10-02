@@ -64,6 +64,12 @@ ApplicationWindow {
     }
     function askUninstall(g) {
         if (g.platform === "steam") { backend.uninstall(g.key); return }   // Steam kendisi sorar
+        if (g.platform === "local") {
+            dialog.ask(g.title + " raftan kaldırılsın mı?",
+                       "Sadece raftan kalkar. Bilgisayarındaki dosyalarına dokunulmaz.",
+                       "Raftan kaldır", "Vazgeç", true, function() { backend.removeLocalGame(g.key) })
+            return
+        }
         dialog.ask(g.title + " kaldırılsın mı?",
                    "Oyunun dosyaları bilgisayarından silinecek. Sonra istersen tekrar indirebilirsin.",
                    "Kaldır", "Vazgeç", true, function() { backend.uninstall(g.key) })
@@ -125,7 +131,7 @@ ApplicationWindow {
 
     // ------------------------------------------------------------ klavye kısayolları
     Shortcut { sequence: "Ctrl+F"; onActivated: { appRoot.closeTop(); search.forceActiveFocus(); search.selectAll() } }
-    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
+    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !pickDialog.opened && !wishDialog.opened && !localDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
     Shortcut { sequence: "Ctrl+1"; onActivated: { backend.viewMode = "grid"; focusView() } }
     Shortcut { sequence: "Ctrl+2"; onActivated: { backend.viewMode = "list"; focusView() } }
     Shortcut { sequence: "Ctrl+T"; onActivated: backend.dark = !backend.dark }
@@ -133,6 +139,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+G"; onActivated: skyOpen ? closeSky() : openSky() }
     Shortcut { sequence: "Ctrl+,"; onActivated: settingsOpen = true }
     Shortcut { sequence: "F1"; onActivated: shortcutsHelp() }
+    Shortcut { sequence: "Ctrl+R"; onActivated: pickDialog.open() }
 
     function shortcutsHelp() {
         dialog.ask("Klavye kısayolları",
@@ -144,6 +151,7 @@ ApplicationWindow {
                    "Ctrl+1 / Ctrl+2   Izgara / liste görünümü\n" +
                    "Ctrl+T   Aydınlık / karanlık tema\n" +
                    "Ctrl+G   Gökyüzü modu\n" +
+                   "Ctrl+R   Ne oynasam?\n" +
                    "F5   Listeyi yenile\n" +
                    "Ctrl+,   Ayarlar",
                    "Tamam", "", false, null, null)
@@ -195,7 +203,7 @@ ApplicationWindow {
                 Keys.onReturnPressed: appRoot.focusView()
             }
             Segmented {
-                options: ["Hepsi", "Steam", "Epic"]
+                options: backend.localCount > 0 ? ["Hepsi", "Steam", "Epic", "Diğer"] : ["Hepsi", "Steam", "Epic"]
                 current: backend.platformFilter
                 onPicked: (i) => backend.platformFilter = i
             }
@@ -215,6 +223,7 @@ ApplicationWindow {
                 current: backend.viewMode === "list" ? 1 : 0
                 onPicked: (i) => { backend.viewMode = i === 1 ? "list" : "grid"; appRoot.focusView() }
             }
+            DiceButton { onClicked: pickDialog.open() }
             ThemeSwitch {}
             DotsButton {
                 id: menuButton
@@ -261,6 +270,17 @@ ApplicationWindow {
             mark: theme.danger
             text: "Steam oturumun sona ermiş, oyun listen güncellenemiyor."
             AppButton { kind: "primary"; compact: true; text: "Steam ile giriş yap"; onClicked: backend.loginSteam() }
+        }
+        TopBanner {   // istek listesi indirimleri
+            Layout.fillWidth: true
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            Layout.bottomMargin: 8
+            visible: backend.wishBannerVisible && backend.wishNotify
+            mark: theme.ok
+            text: backend.wishBannerText
+            AppButton { kind: "ghost"; compact: true; text: "Kapat"; onClicked: backend.dismissWishBanner() }
+            AppButton { kind: "secondary"; compact: true; text: "Göster"; onClicked: wishDialog.open() }
         }
         TopBanner {   // Epic ücretsiz oyun şeridi
             Layout.fillWidth: true
@@ -354,6 +374,8 @@ ApplicationWindow {
         AppMenuItem { text: "Gökyüzü modu (Ctrl+G)"; onTriggered: appRoot.openSky() }
         AppMenuItem { text: "Epic'te ücretsiz oyunlar"; onTriggered: { backend.checkFreeGames(); freeDialog.open() } }
         AppMenuItem { text: "Disk alanı"; onTriggered: appRoot.diskOpen = true }
+        AppMenuItem { text: "İstek listemdeki indirimler"; visible: backend.wishAvailable; onTriggered: { backend.checkWishlist(); wishDialog.open() } }
+        AppMenuItem { text: "Kendi oyununu ekle…"; onTriggered: localDialog.openAdd() }
         AppMenuSeparator {}
         AppMenuItem {
             text: "Gizlenen oyunları göster"
@@ -436,6 +458,13 @@ ApplicationWindow {
     AppDialog { id: dialog }
     FreeGamesDialog { id: freeDialog; objectName: "freeDialog" }
     CoverPicker { id: coverPicker; objectName: "coverPicker" }
+    PickDialog { id: pickDialog; objectName: "pickDialog" }
+    WishlistDialog { id: wishDialog; objectName: "wishDialog" }
+    LocalGameDialog { id: localDialog; objectName: "localDialog" }
+    Connections {
+        target: backend
+        function onLocalAdded(g) { coverPicker.openFor(g) }   // yeni eklenen oyuna kapak seçtir
+    }
 
     // Epic oyunu için diskte yeterli yer yoksa
     property var spaceGame: null

@@ -257,7 +257,7 @@ def load_config():
            "tray_hint_shown": False, "sort": 0,
            "dark": True, "reduce_motion": False, "software_render": False,
            "view": "grid", "onboarded": False,
-           "free_notify": True, "auto_update_check": True}
+           "free_notify": True, "auto_update_check": True, "wish_notify": True}
     cfg.update(read_json(CONFIG_FILE, {}))
     return cfg
 
@@ -589,6 +589,46 @@ def check_github_update(repo, current):
     return {"version": latest, "notes": (rel.get("body") or "").strip()[:2000],
             "url": assets[0]["browser_download_url"], "size": int(assets[0].get("size") or 0),
             "name": assets[0]["name"]}
+
+
+STEAM_API = "https://api.steampowered.com"
+
+
+def steam_wishlist_deals(steamid, token="", key=""):
+    """İstek listesindeki oyunlardan şu an indirimde olanlar."""
+    import requests
+    auth = {"access_token": token} if token else ({"key": key} if key else {})
+    r = requests.get(f"{STEAM_API}/IWishlistService/GetWishlist/v1/", params={"steamid": steamid, **auth}, timeout=30)
+    if r.status_code in (401, 403):
+        raise RuntimeError("İstek listesi okunamadı (Steam izin vermedi).")
+    r.raise_for_status()
+    appids = [i["appid"] for i in ((r.json() or {}).get("response") or {}).get("items", []) if i.get("appid")]
+    deals = []
+    for i in range(0, len(appids), 50):
+        req = {"ids": [{"appid": a} for a in appids[i:i + 50]],
+               "context": {"language": "turkish", "country_code": "TR"},
+               "data_request": {"include_assets": True}}
+        r = requests.get(f"{STEAM_API}/IStoreBrowseService/GetItems/v1/",
+                         params={"input_json": json.dumps(req), **auth}, timeout=30)
+        r.raise_for_status()
+        for it in ((r.json() or {}).get("response") or {}).get("store_items", []):
+            po = it.get("best_purchase_option") or {}
+            pct = int(po.get("discount_pct") or 0)
+            if pct <= 0 or not it.get("appid"):
+                continue
+            ends = [d.get("discount_end_date") or 0 for d in po.get("active_discounts") or []]
+            assets = it.get("assets") or {}
+            img = steam_header(it["appid"])
+            if assets.get("asset_url_format") and (assets.get("header") or assets.get("main_capsule")):
+                img = ("https://shared.akamai.steamstatic.com/store_item_assets/" +
+                       assets["asset_url_format"].replace("${FILENAME}", assets.get("header") or assets.get("main_capsule")))
+            deals.append({"appid": it["appid"], "title": it.get("name") or f"Steam oyunu {it['appid']}",
+                          "pct": pct, "final": po.get("formatted_final_price") or "",
+                          "original": po.get("formatted_original_price") or "",
+                          "end": max(ends) if ends else 0, "image": img,
+                          "url": f"https://store.steampowered.com/app/{it['appid']}"})
+    deals.sort(key=lambda d: -d["pct"])
+    return {"total": len(appids), "deals": deals, "updated": int(time.time())}
 
 
 STEAM_APPDETAILS = "https://store.steampowered.com/api/appdetails"   # oyunun güncel kapak adresi buradan
@@ -1136,6 +1176,8 @@ def run_gui():
         familyResult = Signal(bool, str)
         freeChanged = Signal()
         diskChanged = Signal()
+        wishChanged = Signal()
+        localAdded = Signal(QObject)
         gridResults = Signal(str, "QVariantList", str)      # oyun, kapak önerileri, hata
         spaceProblem = Signal(str, str, str, str)           # oyun, gereken, boş, klasör
         updateChanged = Signal()
@@ -1173,7 +1215,7 @@ def run_gui():
             self._needsOnboarding = (not self.cfg.get("onboarded") and not self.cfg.get("steam_api_key")
                                      and not self.cfg.get("steam_via_token") and not self.cfg.get("steam_login"))
             self._steamExpired = False
-            self.steam_session = SteamSession(self) if WEB_OK else None
+            self._steam_session = None      # tarayıcı motoru sadece gerektiğinde başlatılır
             self._epic_profiles = []
             self._introActive = False
             self._watch = set()          # yeni oyun takibi açık olan platformlar
@@ -1331,6 +1373,7 @@ def run_gui():
                 self._epic_apply(cache["epic"], from_cache=True)
                 self._watch.add("epic")
             self._new_batch = []
+            self._local_apply()
             if self.games:
                 self._play_intro()
             self._relayout_now()
@@ -1346,6 +1389,13 @@ def run_gui():
             self.free_timer.timeout.connect(self.checkFreeGames)
             self.free_timer.start()
             QTimer.singleShot(8000, self.checkFreeGames)
+            # İstek listesi indirimleri: açılıştan biraz sonra ve 6 saatte bir
+            self._wish = read_json(LIST_CACHE, {}).get("steam_wish") or {}
+            self.wishChanged.emit()
+            self.wish_timer = QTimer(self, interval=6 * 60 * 60 * 1000)
+            self.wish_timer.timeout.connect(self.checkWishlist)
+            self.wish_timer.start()
+            QTimer.singleShot(20000, self.checkWishlist)
             # Güncelleme: açılıştan biraz sonra ve 12 saatte bir
             self.upd_timer = QTimer(self, interval=12 * 60 * 60 * 1000)
             self.upd_timer.timeout.connect(lambda: self.checkUpdates(False))
@@ -1472,7 +1522,7 @@ def run_gui():
                 self._games_dirty = False
                 self.gamesChanged.emit()
             q = self._search.strip().casefold()
-            plat = {0: None, 1: "steam", 2: "epic"}.get(self._platformFilter)
+            plat = {0: None, 1: "steam", 2: "epic", 3: "local"}.get(self._platformFilter)
             mode = self._sortMode
 
             def sort_key(g):
@@ -1630,7 +1680,7 @@ def run_gui():
 
         def load_steam(self, report=False):
             cfg = dict(self.cfg)
-            if cfg.get("steam_login") and self.steam_session:
+            if cfg.get("steam_login") and WEB_OK:
                 self._load_steam_session(report)
                 return
             if not cfg.get("steam_api_key") or not cfg.get("steam_profile"):
@@ -1811,6 +1861,198 @@ def run_gui():
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.quitNow()
 
+        # ======================================================== Ne oynasam?
+        def _pick_pool(self, mode):
+            installed = [g for g in self.games.values() if g.state == INSTALLED and not g.hidden]
+            now = time.time()
+            if mode == "stale":      # 1 aydan uzun süredir açılmayanlar
+                pool = [g for g in installed if g.lastPlayed and now - g.lastPlayed > 30 * 86400]
+            elif mode == "never":    # hiç oynanmayanlar
+                pool = [g for g in installed if not g.playtime and not g.lastPlayed]
+            else:
+                pool = installed
+            return pool
+
+        @Slot(str, result="QVariantList")
+        def pickGames(self, mode):
+            """Karıştırma animasyonu için rastgele sıralanmış oyunlar; sonuncusu seçilen oyun."""
+            import random
+            pool = self._pick_pool(mode)
+            if not pool:
+                return []
+            last = getattr(self, "_last_pick", None)
+            choices = [g for g in pool if g.key != last] or pool
+            pick = random.choice(choices)
+            self._last_pick = pick.key
+            others = random.sample(pool, min(len(pool), 10))
+            seq = [g for g in others if g is not pick][:9] + [pick]
+            LOG.info(f"Ne oynasam: {pick.title} ({mode}, {len(pool)} aday)")
+            return seq
+
+        @Slot(str, result=int)
+        def pickCount(self, mode):
+            return len(self._pick_pool(mode))
+
+        # ======================================================== istek listesi indirimleri
+        wishNotify = _simple("wishNotify", "wish_notify")
+
+        def _wish_deals(self):
+            return (getattr(self, "_wish", None) or {}).get("deals", [])
+
+        def _wish_list(self):
+            out = []
+            for d in self._wish_deals():
+                x = dict(d)
+                x["dateText"] = f"{tr_date(d['end'])} tarihine kadar" if d.get("end") else ""
+                out.append(x)
+            return out
+
+        def _wish_new_keys(self):
+            return sorted(f"{d['appid']}:{d.get('end') or d['pct']}" for d in self._wish_deals())
+
+        def _wish_banner(self):
+            keys = self._wish_new_keys()
+            return bool(keys) and keys != sorted(self.data.get("wish_dismissed", []))
+
+        def _wish_banner_text(self):
+            deals = self._wish_deals()
+            if not deals:
+                return ""
+            names = ", ".join(f"{d['title']} (%{d['pct']})" for d in deals[:3])
+            more = f" ve {len(deals) - 3} oyun daha" if len(deals) > 3 else ""
+            return f"İstek listende indirim: {names}{more}"
+
+        wishDeals = Property("QVariantList", _wish_list, notify=wishChanged)
+        wishBannerVisible = Property(bool, _wish_banner, notify=wishChanged)
+        wishBannerText = Property(str, _wish_banner_text, notify=wishChanged)
+        wishTotal = Property(int, lambda self: int((getattr(self, "_wish", None) or {}).get("total", 0)), notify=wishChanged)
+        wishAvailable = Property(bool, lambda self: bool(self.cfg.get("steam_login") or self.cfg.get("steam_id")), notify=changed)
+
+        @Slot()
+        def checkWishlist(self):
+            sid = str(self.cfg.get("steam_id") or "")
+            if self.cfg.get("steam_login") and WEB_OK:
+                def got(tok):
+                    if tok:
+                        s = str(jwt_payload(tok).get("sub") or sid)
+                        self.run_background(lambda: steam_wishlist_deals(s, token=tok), self._wish_loaded)
+                self.steam_session.get_token(got)
+            elif self.cfg.get("steam_api_key") and sid:
+                key = self.cfg["steam_api_key"]
+                self.run_background(lambda: steam_wishlist_deals(sid, key=key), self._wish_loaded)
+
+        def _wish_loaded(self, result, error):
+            if error or not result:
+                LOG.info(f"İstek listesi kontrol edilemedi: {error}")
+                return
+            LOG.info(f"İstek listesi: {result['total']} oyun, {len(result['deals'])} indirimde")
+            self._wish = result
+            self.save_list_cache("steam_wish", result)
+            self.wishChanged.emit()
+            seen = set(self.data.get("wish_seen", []))
+            keys = {f"{d['appid']}:{d.get('end') or d['pct']}": d for d in result["deals"]}
+            fresh = [d for k, d in keys.items() if k not in seen]
+            if fresh and self.wishNotify:
+                names = ", ".join(f"{d['title']} %{d['pct']}" for d in fresh[:3])
+                more = f" ve {len(fresh) - 3} oyun daha" if len(fresh) > 3 else ""
+                self.notify(f"İstek listende indirim: {names}{more}", "ok")
+            self.data["wish_seen"] = sorted(set(keys) | seen)[-500:]
+            self.save_data()
+
+        @Slot()
+        def dismissWishBanner(self):
+            self.data["wish_dismissed"] = self._wish_new_keys()
+            self.save_data()
+            self.wishChanged.emit()
+
+        # ======================================================== kendi oyunların
+        localCount = Property(int, lambda self: len(self.data.get("local_games", {})), notify=gamesChanged)
+
+        def _local_apply(self):
+            plays = self.data.get("local_play", {})
+            for gid, info in (self.data.get("local_games") or {}).items():
+                g = self.upsert("local", gid, info.get("title") or "Oyun", "", count_new=False)
+                exe = Path(info.get("exe", ""))
+                g.installPath = str(exe.parent)
+                g.state = INSTALLED if g.state not in (PLAYING, BUSY) else g.state
+                p = plays.get(gid, {})
+                g.playtime, g.lastPlayed = int(p.get("minutes", 0)), int(p.get("last", 0))
+                g.playKnown = True
+
+        @Slot(str, str)
+        def addLocalGame(self, file_url, title):
+            path = QUrl(file_url).toLocalFile() if file_url.startswith("file:") else file_url
+            p = Path(path)
+            if not p.is_file():
+                self.toast.emit("Dosya bulunamadı.", "error")
+                return
+            title = (title or "").strip() or p.stem
+            gid = hashlib.md5(str(p).lower().encode()).hexdigest()[:10]
+            self.data.setdefault("local_games", {})[gid] = {"title": title, "exe": str(p), "added": int(time.time())}
+            self.save_data()
+            self._local_apply()
+            self._games_dirty = True
+            self.relayout()
+            LOG.info(f"Kendi oyunu eklendi: {title}")
+            self.toast.emit(f"{title} rafa eklendi.", "ok")
+            g = self.games.get(f"local:{gid}")
+            if g:
+                self.localAdded.emit(g)
+
+        @Slot(str)
+        def removeLocalGame(self, key):
+            g = self._game(key)
+            if not g or g.platform != "local":
+                return
+            self.data.get("local_games", {}).pop(g.id, None)
+            self.save_data()
+            self.games.pop(key, None)
+            self._games_dirty = True
+            self.relayout()
+            self.toast.emit(f"{g.title} raftan kaldırıldı. Bilgisayarındaki dosyalarına dokunulmadı.", "info")
+
+        @Slot(str, str)
+        def renameLocalGame(self, key, title):
+            g = self._game(key)
+            info = self.data.get("local_games", {}).get(g.id) if g else None
+            if info and title.strip():
+                info["title"] = g.title = title.strip()
+                self.save_data()
+                self.relayout()
+
+        def _play_local(self, g):
+            info = self.data.get("local_games", {}).get(g.id) or {}
+            exe = Path(info.get("exe", ""))
+            if not exe.exists():
+                self.alert.emit("Dosya bulunamadı", f"{g.title} için seçilen dosya artık yerinde değil:\n{exe}\n\n"
+                                                     "Oyunu raftan kaldırıp yeniden ekleyebilirsin.")
+                return
+            g.state, g.info = PLAYING, "oyun açık"
+            started = time.time()
+
+            def job():
+                if exe.suffix.lower() == ".exe":
+                    subprocess.Popen([str(exe)], cwd=str(exe.parent))
+                elif IS_WINDOWS:
+                    os.startfile(str(exe))      # kısayol (.lnk / .url) ya da başka bir dosya
+                else:
+                    subprocess.Popen(["xdg-open", str(exe)])
+                seconds = wait_for_game(str(exe.parent), appear_timeout=60)
+                return seconds
+
+            def done(seconds, error):
+                g.state, g.info = INSTALLED, ""
+                rec = self.data.setdefault("local_play", {}).setdefault(g.id, {"minutes": 0, "last": 0})
+                rec["last"] = int(started)
+                rec["minutes"] = rec.get("minutes", 0) + int((seconds or 0) // 60)
+                g.playtime, g.lastPlayed = rec["minutes"], rec["last"]
+                self.save_data()
+                if error:
+                    self.alert.emit("Oyun açılamadı", str(error))
+                if self._sortMode in (1, 2):
+                    self.relayout()
+            self.run_background(job, done)
+
         # ======================================================== sorun bildir
         @Slot()
         def reportProblem(self):
@@ -1966,8 +2208,8 @@ def run_gui():
         @Slot()
         def refreshDisk(self):
             import shutil
-            games = [g for g in self.games.values()
-                     if g.installPath and g.state in (INSTALLED, PLAYING, BUSY, DOWNLOADING, STEAM_DOWNLOADING, PAUSED)]
+            games = [g for g in self.games.values() if g.platform != "local"
+                     and g.installPath and g.state in (INSTALLED, PLAYING, BUSY, DOWNLOADING, STEAM_DOWNLOADING, PAUSED)]
             games.sort(key=lambda g: -(g.sizeBytes or 0))
             self._disk_list = games
             drives = {}
@@ -2027,6 +2269,12 @@ def run_gui():
             return format_bytes(sum(g.sizeBytes or 0 for g in getattr(self, "_disk_list", [])))
 
         # ======================================================== uygulama içi giriş
+        @property
+        def steam_session(self):
+            if self._steam_session is None and WEB_OK:
+                self._steam_session = SteamSession(self)
+            return self._steam_session
+
         def _load_steam_session(self, report=False):
             self.steamMsg = "Steam güncelleniyor"
 
@@ -2073,7 +2321,7 @@ def run_gui():
 
         @Slot()
         def loginSteam(self):
-            if not self.steam_session:
+            if not WEB_OK:
                 return
 
             def done(tok):
@@ -2092,7 +2340,7 @@ def run_gui():
 
         @Slot()
         def logoutSteam(self):
-            if self.steam_session:
+            if self._steam_session is not None or (WEB_OK and self.cfg.get("steam_login")):
                 self.steam_session.logout()
             self.cfg["steam_login"] = False
             write_json(CONFIG_FILE, self.cfg)
@@ -2238,6 +2486,9 @@ def run_gui():
                     g.installPath = st["path"]
                 else:
                     g.state, g.progress, g.installPath = INSTALLED, -1.0, st["path"]
+                    if old == STEAM_DOWNLOADING:
+                        LOG.info(f"Steam indirmesi bitti: {g.title}")
+                        self.notify(f"{g.title} indirildi, oynamaya hazır.", "ok")
                 changed |= old != g.state
             if changed:
                 self._update_summary()
@@ -2719,6 +2970,9 @@ def run_gui():
             if g.platform == "steam":
                 QDesktopServices.openUrl(QUrl(f"steam://rungameid/{g.id}"))
                 return
+            if g.platform == "local":
+                self._play_local(g)
+                return
             g.state, g.info = PLAYING, "başlatılıyor"
             path, app, cloud = g.installPath, g.id, g.cloud
             log = []
@@ -2785,6 +3039,9 @@ def run_gui():
                 return
             if g.platform == "steam":
                 QDesktopServices.openUrl(QUrl(f"steam://uninstall/{g.id}"))
+                return
+            if g.platform == "local":
+                self.removeLocalGame(key)
                 return
             g.state, g.info = BUSY, "kaldırılıyor"
 

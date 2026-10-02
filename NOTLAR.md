@@ -1,6 +1,5 @@
-- Artık kod kopyalayıp yapıştırmak yok: Steam ve Epic için "ile giriş yap" butonuna basınca programın içinde kendi giriş sayfaları açılıyor. Giriş yapınca pencere kendiliğinden kapanıyor.
-- Steam için API anahtarına gerek kalmadı. Giriş yapınca kendi oyunların ve Steam ailende paylaşılan oyunlar birlikte geliyor ve kendiliğinden güncelleniyor.
-- Steam'e telefondaki Steam uygulamasıyla QR kod okutarak da girebilirsin. Şifren programa kaydedilmez.
-- Steam oturumun sona ererse rafın üstünde bir uyarı çıkıyor, tek tıkla tekrar giriş yapabiliyorsun.
-- Ayarlar'da "Steam'den çıkış yap" ve "Epic'ten çıkış yap" butonları var.
-- Kurulum dosyası, içine giriş sayfaları için bir tarayıcı motoru eklendiği için büyüdü.
+- Ne oynasam? Üst çubuktaki zar butonu (ya da Ctrl+R) kurulu oyunlarından birini seçer. "Uzun süredir açmadıklarım" ve "Hiç oynamadıklarım" seçenekleri de var.
+- Steam istek listendeki bir oyun indirime girince bildirim çıkıyor ve rafın üstünde bir şerit görünüyor. Menü > İstek listemdeki indirimler ile hepsini fiyatlarıyla görebilirsin.
+- Steam indirmesi bitince de artık bildirim çıkıyor.
+- Kendi oyununu ekle: Menü > Kendi oyununu ekle ile Steam ve Epic dışındaki oyunlarını (.exe ya da kısayol) rafa koyabilirsin. Oynama süresi de sayılıyor. Üstteki filtrede "Diğer" olarak görünürler.
+- Tarayıcı motoru artık sadece Steam'e giriş yapılmışsa başlatılıyor, program biraz daha hızlı açılıyor.

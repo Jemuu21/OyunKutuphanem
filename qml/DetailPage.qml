@@ -75,7 +75,7 @@ Rectangle {
 
                 RowLayout {
                     spacing: 8
-                    Text { text: page.epic ? "Epic Games" : (page.has && page.game.shared ? "Steam ailesi" : "Steam"); color: theme.muted; font.pixelSize: 14 }
+                    Text { text: page.epic ? "Epic Games" : S.platformLabel(page.game); color: theme.muted; font.pixelSize: 14 }
                     Star { visible: page.has && page.game.favorite; implicitWidth: 13; implicitHeight: 13 }
                 }
                 Text {
@@ -166,9 +166,14 @@ Rectangle {
                         onClicked: coverPicker.openFor(page.game)
                     }
                     AppButton {
+                        visible: page.has && page.game.platform === "local"
+                        text: "Adını değiştir"
+                        onClicked: localDialog.openRename(page.game)
+                    }
+                    AppButton {
                         visible: page.has && page.game.state === "installed"
                         kind: "danger"
-                        text: "Kaldır"
+                        text: page.has && page.game.platform === "local" ? "Raftan kaldır" : "Kaldır"
                         onClicked: appRoot.askUninstall(page.game)
                     }
                 }
@@ -198,6 +203,8 @@ Rectangle {
                     Value { visible: page.has && page.game.sizeText !== ""; text: page.has ? page.game.sizeText : "" }
                     Label { text: "Konum" }
                     Value { text: page.has && page.game.installPath !== "" ? page.game.installPath : "Kurulu değil" }
+                    Label { visible: page.has && page.game.platform === "local"; text: "Dosya" }
+                    Value { visible: page.has && page.game.platform === "local"; text: "Bilgisayarından eklediğin oyun. Oynama süresi bu programdan açtığında sayılır." ; wrapMode: Text.WordWrap }
                     Label { visible: page.epic; text: "Bulut kayıtları" }
                     Value {
                         visible: page.epic

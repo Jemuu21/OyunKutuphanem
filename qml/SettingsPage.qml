@@ -102,6 +102,13 @@ Item {
                     onToggled: backend.freeNotify = checked
                 }
                 AppSwitch {
+                    Layout.fillWidth: true
+                    text: "İstek listemdeki indirimleri haber ver"
+                    note: "Steam istek listendeki bir oyun indirime girince bildirim çıkar ve rafın üstünde bir şerit görünür. Steam'e giriş yapmış olman gerekir."
+                    checked: backend.wishNotify
+                    onToggled: backend.wishNotify = checked
+                }
+                AppSwitch {
                     visible: backend.updateEnabled
                     Layout.fillWidth: true
                     text: "Güncellemeleri kendiliğinden kontrol et"

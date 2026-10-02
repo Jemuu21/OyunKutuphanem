@@ -74,7 +74,7 @@ Item {
                 width: parent.width
                 spacing: 6
                 Text {
-                    text: tile.game.platform === "steam" ? (tile.game.shared ? "Steam ailesi" : "Steam") : "Epic"
+                    text: S.platformLabel(tile.game)
                     color: theme.muted
                     font.pixelSize: 12
                 }

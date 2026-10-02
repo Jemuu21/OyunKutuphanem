@@ -82,3 +82,11 @@ function sizeOrPlay(g) {
     if (g.playtimeText !== "") return g.playtimeText
     return (g.platform === "steam" && g.playKnown) ? "Hiç oynanmadı" : ""
 }
+
+// Kartta görünen platform adı
+function platformLabel(g) {
+    if (!g) return ""
+    if (g.platform === "steam") return g.shared ? "Steam ailesi" : "Steam"
+    if (g.platform === "epic") return "Epic"
+    return "Bilgisayar"
+}

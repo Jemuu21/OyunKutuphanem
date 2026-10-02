@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "state.js" as S
 
 // Gökyüzü modu: her oyun bir yıldız. Tam ekran, isteğe bağlı.
 Rectangle {
@@ -176,7 +177,7 @@ Rectangle {
             spacing: 2
             Text { text: sky.hoverGame ? sky.hoverGame.title : ""; color: "#F2F5FA"; font.pixelSize: 16; font.weight: Font.Bold }
             Text {
-                text: sky.hoverGame ? [sky.hoverGame.platform === "steam" ? (sky.hoverGame.shared ? "Steam ailesi" : "Steam") : "Epic",
+                text: sky.hoverGame ? [S.platformLabel(sky.hoverGame),
                                        sky.hoverGame.playtimeText || "hiç oynanmadı",
                                        sky.hoverGame.lastPlayedText ? "son: " + sky.hoverGame.lastPlayedText : ""].filter(Boolean).join(", ") : ""
                 color: "#A9B6CC"

@@ -73,7 +73,7 @@ Item {
             }
             RowLayout {
                 spacing: 6
-                Text { text: row.game.platform === "steam" ? (row.game.shared ? "Steam ailesi" : "Steam") : "Epic"; color: theme.muted; font.pixelSize: 12 }
+                Text { text: S.platformLabel(row.game); color: theme.muted; font.pixelSize: 12 }
                 Star { visible: row.game.favorite; implicitWidth: 11; implicitHeight: 11 }
             }
         }
