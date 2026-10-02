@@ -1,3 +1,3 @@
-- Kütüphanene yeni bir oyun eklenince bildirim çıkıyor, alttaki çubukta "Yeni eklendi: oyunun adı" yazıyor. Yazıya tıklayınca oyunun sayfası açılıyor.
-- Pencerenin en üstündeki başlık çubuğu artık programın temasıyla aynı renkte, temayı değiştirince o da değişiyor.
-- Steam listesi 30 dakikada bir kendiliğinden yenileniyor, yeni aldığın oyunlar programı kapatıp açmadan geliyor.
+- Pencerenin üstü artık macOS tarzı: Windows'un başlık çubuğu kalktı, sol üstte kırmızı (kapat), sarı (küçült) ve yeşil (büyüt) butonlar var. Fareyle üstlerine gelince işaretleri görünüyor.
+- "Oyun Kütüphanem" yazısı artık sadece bir kez görünüyor.
+- Pencereyi üstteki boş şeritten tutup taşıyabilir, çift tıklayıp ekranı kaplatabilir, kenarlarından ve köşelerinden boyutlandırabilirsin.

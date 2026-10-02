@@ -2214,6 +2214,7 @@ def run_gui():
             dwm(35, colorref(pal["bg"]))            # başlık çubuğu rengi (Windows 11)
             dwm(36, colorref(pal["text"]))          # başlık yazısı rengi (Windows 11)
             dwm(34, colorref(pal["line"]))          # pencere kenarı rengi (Windows 11)
+            dwm(33, 2)                              # yuvarlak köşeler (Windows 11)
         except Exception:
             pass
     theme.changed.connect(apply_titlebar)

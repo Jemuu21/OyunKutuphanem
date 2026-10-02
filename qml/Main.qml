@@ -12,7 +12,9 @@ ApplicationWindow {
     minimumWidth: 1000
     minimumHeight: 620
     visible: !startHidden   // "Windows açılınca başlat" ile açıldıysa saatin yanında bekler
-    title: "Oyun Kütüphanem"
+    title: "Oyun Kütüphanem"   // görev çubuğunda görünür; pencerenin içinde Windows başlığı yok
+    // Windows'un çerçevesi yerine kendi üst şeridimiz (macOS tarzı butonlar)
+    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinMaxButtonsHint
     color: theme.bg
     font.family: theme.bodyFont
     font.pixelSize: 14
@@ -135,15 +137,29 @@ ApplicationWindow {
     }
 
     // ------------------------------------------------------------ ana düzen
+    TitleStrip {
+        id: titleStrip
+        win: appRoot
+        z: 90
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        visible: !appRoot.skyOpen
+        height: visible ? implicitHeight : 0
+    }
+
     ColumnLayout {
-        anchors.fill: parent
+        anchors.top: titleStrip.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         spacing: 0
 
         RowLayout {   // üst çubuk
             Layout.fillWidth: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
-            Layout.topMargin: 16
+            Layout.topMargin: 2
             Layout.bottomMargin: 10
             spacing: 10
 
@@ -340,20 +356,29 @@ ApplicationWindow {
         onCloseRequested: appRoot.closeSky()
     }
     DetailPage {
-        anchors.fill: parent
+        anchors.top: titleStrip.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         z: 40
         visible: !!appRoot.detailGame
         game: appRoot.detailGame
         onCloseRequested: appRoot.closeDetail()
     }
     SettingsPage {
-        anchors.fill: parent
+        anchors.top: titleStrip.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         z: 45
         visible: appRoot.settingsOpen
         onCloseRequested: { appRoot.settingsOpen = false; appRoot.focusView() }
     }
     Onboarding {
-        anchors.fill: parent
+        anchors.top: titleStrip.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         z: 50
         visible: backend.needsOnboarding
     }
@@ -364,6 +389,15 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 48
         width: Math.min(600, parent.width - 40)
+    }
+    ResizeHandles { win: appRoot; z: 250 }
+    Rectangle {   // pencerenin ince kenar çizgisi
+        anchors.fill: parent
+        z: 260
+        color: "transparent"
+        border.width: appRoot.visibility === Window.Windowed ? 1 : 0
+        border.color: theme.line
+        enabled: false
     }
     AppDialog { id: dialog }
     FreeGamesDialog { id: freeDialog; objectName: "freeDialog" }
