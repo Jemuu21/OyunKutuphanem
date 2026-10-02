@@ -161,6 +161,10 @@ Rectangle {
                         onClicked: backend.toggleHidden(page.game.key)
                     }
                     AppButton {
+                        text: "Kapağı değiştir"
+                        onClicked: coverPicker.openFor(page.game)
+                    }
+                    AppButton {
                         visible: page.has && page.game.state === "installed"
                         kind: "danger"
                         text: "Kaldır"
@@ -189,6 +193,8 @@ Rectangle {
                     Value { text: page.has && page.game.playtimeText !== "" ? page.game.playtimeText : "Henüz oynanmadı" }
                     Label { text: "Son oynama" }
                     Value { text: page.has && page.game.lastPlayedText !== "" ? page.game.lastPlayedText : "Kayıt yok" }
+                    Label { visible: page.has && page.game.sizeText !== ""; text: "Kapladığı yer" }
+                    Value { visible: page.has && page.game.sizeText !== ""; text: page.has ? page.game.sizeText : "" }
                     Label { text: "Konum" }
                     Value { text: page.has && page.game.installPath !== "" ? page.game.installPath : "Kurulu değil" }
                     Label { visible: page.epic; text: "Bulut kayıtları" }

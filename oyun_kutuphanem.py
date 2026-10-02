@@ -74,8 +74,83 @@ CONFIG_FILE = DATA_DIR / "ayarlar.json"           # Steam anahtarı vb. (kimseyl
 DATA_FILE = DATA_DIR / "kutuphane_verisi.json"    # favoriler, gizlenenler, oynama süreleri
 LIST_CACHE = CACHE_ROOT / "kutuphane_onbellek.json"  # hızlı açılış için son oyun listesi
 CACHE_DIR = CACHE_ROOT / "kapak_onbellek"
+COVER_DIR = DATA_DIR / "ozel_kapaklar"            # kullanıcının kendi seçtiği kapaklar
 ICON_FILE = RES_DIR / "icon.ico" if (RES_DIR / "icon.ico").exists() else APP_DIR / "icon.ico"
 MUTEX_NAME = "OyunKutuphanem-Calisiyor"          # kurulum programı, program açık mı diye buna bakar
+LOG_FILE = DATA_DIR / "kayit.log"
+
+import logging
+LOG = logging.getLogger("oyunkutuphanem")
+
+
+def mask(text):
+    """Kayda yazılan metinden gizli bilgileri ve kullanıcı adını çıkarır."""
+    text = str(text)
+    text = re.sub(r"(key|access_token|token|steamid|code|authorizationCode)=([^&\s\"']+)", r"\1=***", text, flags=re.I)
+    text = re.sub(r"eyJ[\w-]{10,}\.[\w-]+\.[\w-]+", "***", text)          # jetonlar
+    try:
+        home = str(Path.home())
+        if len(home) > 3:
+            text = text.replace(home, "~")
+    except Exception:
+        pass
+    return text
+
+
+class _MaskFilter(logging.Filter):
+    def filter(self, record):
+        record.msg = mask(record.getMessage())
+        record.args = ()
+        return True
+
+
+def setup_logging():
+    import logging.handlers
+    import platform
+    import traceback
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    h = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=1, encoding="utf-8")
+    h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S"))
+    h.addFilter(_MaskFilter())
+    LOG.addHandler(h)
+    LOG.setLevel(logging.INFO)
+
+    def hook(t, v, tb):
+        LOG.error("Beklenmeyen hata:\n" + "".join(traceback.format_exception(t, v, tb)))
+    sys.excepthook = hook
+    threading.excepthook = lambda a: hook(a.exc_type, a.exc_value, a.exc_traceback)
+    LOG.info(f"=== Oyun Kütüphanem {APP_VERSION} açıldı | {platform.platform()} | "
+             f"{'kurulu program' if FROZEN else 'kaynak koddan'} | Python {platform.python_version()}")
+
+
+def format_bytes(n):
+    n = float(n or 0)
+    if n <= 0:
+        return ""
+    gb = n / 1024 ** 3
+    if gb >= 1024:
+        return f"{gb / 1024:.1f} TB".replace(".", ",")
+    if gb >= 1:
+        return (f"{gb:.1f} GB" if gb < 100 else f"{gb:.0f} GB").replace(".", ",")
+    return f"{n / 1024 ** 2:.0f} MB"
+
+
+def free_space(path):
+    """Klasörün bulunduğu diskteki boş yer (klasör yoksa var olan ilk üst klasöre bakar)."""
+    import shutil
+    p = Path(path) if path else Path.home()
+    while not p.exists() and p != p.parent:
+        p = p.parent
+    try:
+        return shutil.disk_usage(p).free
+    except Exception:
+        return -1
+
+
+def epic_install_size(app):
+    """Epic oyunu kurulunca diskte kaplayacağı yer (bayt). Bilinmiyorsa 0."""
+    info = legendary_json("info", app, "--json", timeout=180)
+    return int(((info or {}).get("manifest") or {}).get("disk_size") or 0)
 
 
 def prepare_user_dirs():
@@ -83,6 +158,7 @@ def prepare_user_dirs():
     import shutil
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    COVER_DIR.mkdir(parents=True, exist_ok=True)
     moves = [(APP_DIR / "ayarlar.json", CONFIG_FILE),
              (APP_DIR / "kutuphane_verisi.json", DATA_FILE),
              (APP_DIR / "kutuphane_onbellek.json", LIST_CACHE)]
@@ -304,6 +380,7 @@ def steam_local_state(steam_path):
                 "name": st.get("name", f"Steam oyunu {appid}"),
                 "flags": flags, "to_dl": to_dl, "done": done,
                 "path": str(d / "common" / st.get("installdir", "")),
+                "size": int(st.get("sizeondisk", "0") or 0),
             }
     return result
 
@@ -624,7 +701,8 @@ def load_epic():
         slim_games.append({"app_name": g["app_name"], "title": g.get("app_title") or g["app_name"],
                            "image": epic_image(g), "cloud": epic_has_cloud_saves(g), "versions": versions})
     slim_installed = [{"app_name": i["app_name"], "path": i.get("install_path", ""),
-                       "version": i.get("version"), "platform": i.get("platform") or "Windows"}
+                       "version": i.get("version"), "platform": i.get("platform") or "Windows",
+                       "size": int(i.get("install_size") or 0)}
                       for i in installed]
     return {"logged_in": True, "account": status.get("account"), "games": slim_games, "namespaces": namespaces,
             "installed": slim_installed, "imported": imported}
@@ -717,6 +795,7 @@ def run_gui():
     from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
     prepare_user_dirs()
+    setup_logging()
 
     def acc(name, default):
         """Değeri değişince QML'e haber veren basit özellik (getter, setter)."""
@@ -757,6 +836,8 @@ def run_gui():
         playKnown = Property(bool, *acc("playKnown", False), notify=changed)  # oynama süresi biliniyor mu
         shared = Property(bool, *acc("shared", False), notify=changed)       # Steam ailesinden paylaşılan oyun
         downloadSize = Property(str, *acc("downloadSize", ""), notify=changed)
+        sizeBytes = Property(float, *acc("sizeBytes", 0.0), notify=changed)      # diskte kapladığı yer
+        customCover = Property(bool, *acc("customCover", False), notify=changed)  # kapağı kullanıcı seçti
         skyX = Property(float, *acc("skyX", 0.0), notify=changed)
         skyY = Property(float, *acc("skyY", 0.0), notify=changed)
         skySize = Property(float, *acc("skySize", 4.0), notify=changed)
@@ -769,6 +850,7 @@ def run_gui():
             return format_last_played(self.lastPlayed)
 
         playtimeText = Property(str, _pt, notify=changed)
+        sizeText = Property(str, lambda self: format_bytes(self.sizeBytes), notify=changed)
         lastPlayedText = Property(str, _lp, notify=changed)
 
         def __init__(self, platform, gid, title, image_url, parent):
@@ -881,6 +963,9 @@ def run_gui():
         steamResult = Signal(bool, str)
         familyResult = Signal(bool, str)
         freeChanged = Signal()
+        diskChanged = Signal()
+        gridResults = Signal(str, "QVariantList", str)      # oyun, kapak önerileri, hata
+        spaceProblem = Signal(str, str, str, str)           # oyun, gereken, boş, klasör
         updateChanged = Signal()
         epicLoginResult = Signal(bool, str)
         showWindowRequested = Signal()
@@ -1259,7 +1344,21 @@ def run_gui():
             return g
 
         # ======================================================== kapak görselleri
+        @staticmethod
+        def _req(url):
+            """Ağ isteği: bazı siteler kimliksiz istekleri geri çevirdiği için tarayıcı gibi tanıtır."""
+            req = QNetworkRequest(QUrl(url))
+            req.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
+                             QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
+            req.setRawHeader(b"User-Agent", f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) OyunKutuphanem/{APP_VERSION}".encode())
+            return req
+
         def load_cover(self, g):
+            custom = self.data.get("custom_covers", {}).get(g.key)
+            if custom and (COVER_DIR / custom).exists() and (COVER_DIR / custom.replace(".jpg", "_gri.jpg")).exists():
+                self._set_cover(g, COVER_DIR / custom, COVER_DIR / custom.replace(".jpg", "_gri.jpg"))
+                g.customCover = True
+                return
             url = g.image_url
             if not url:
                 return
@@ -1268,21 +1367,21 @@ def run_gui():
             if color.exists() and gray.exists():
                 self._set_cover(g, color, gray)
                 return
-            req = QNetworkRequest(QUrl(url))
-            req.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
-                             QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
-            reply = self.net.get(req)
+            reply = self.net.get(self._req(url))
             reply.finished.connect(lambda: self._cover_done(reply, g, color, gray))
 
         def _cover_done(self, reply, g, color, gray):
             url = reply.url().toString()
             if reply.error() != QNetworkReply.NetworkError.NoError and "store_item_assets/steam/apps" in url:
                 old = url.replace("shared.cloudflare.steamstatic.com/store_item_assets", "cdn.cloudflare.steamstatic.com")
-                r2 = self.net.get(QNetworkRequest(QUrl(old)))
+                r2 = self.net.get(self._req(old))
                 r2.finished.connect(lambda: self._cover_done(r2, g, color, gray))
                 reply.deleteLater()
                 return
             ok_img = False
+            if reply.error() != QNetworkReply.NetworkError.NoError:
+                code = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+                LOG.info(f"Kapak alınamadı: {g.title} | {code or reply.errorString()} | {url.split('?')[0]}")
             if reply.error() == QNetworkReply.NetworkError.NoError:
                 img = QImage()
                 if img.loadFromData(reply.readAll()):
@@ -1302,8 +1401,7 @@ def run_gui():
             missing = self.data.setdefault("cover_missing", {})
             if time.time() - missing.get(g.id, 0) < 7 * 86400:
                 return   # bu hafta zaten sorduk, kapağı yok
-            req = QNetworkRequest(QUrl(f"{STEAM_APPDETAILS}?appids={g.id}&filters=basic"))
-            reply = self.net.get(req)
+            reply = self.net.get(self._req(f"{STEAM_APPDETAILS}?appids={g.id}&filters=basic"))
 
             def done():
                 url = ""
@@ -1317,9 +1415,14 @@ def run_gui():
                     if not url:
                         missing[g.id] = int(time.time())   # Steam'de de kapağı yok, bir hafta sorma
                         self._save_data_later()
+                        LOG.info(f"Steam mağazasında kapak yok: {g.title} ({g.id})")
+                else:
+                    code = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+                    LOG.warning(f"Steam mağazası kapak adresini vermedi: {g.title} ({g.id}) | {code or reply.errorString()}")
                 reply.deleteLater()
                 if url:
-                    r2 = self.net.get(QNetworkRequest(QUrl(url)))
+                    LOG.info(f"Kapak yeni adresten alınıyor: {g.title}")
+                    r2 = self.net.get(self._req(url))
                     r2.finished.connect(lambda: self._cover_done(r2, g, color, gray))
             reply.finished.connect(done)
 
@@ -1373,6 +1476,7 @@ def run_gui():
 
         def _steam_loaded(self, result, error, report):
             if error:
+                LOG.warning(f"Steam listesi alınamadı: {error}")
                 self.steamMsg = "Steam: hata"
                 if report:
                     self.steamResult.emit(False, str(error))
@@ -1381,6 +1485,7 @@ def run_gui():
                 self.poll_steam_local()
                 return
             sid, owned = result
+            LOG.info(f"Steam listesi geldi: {len(owned)} oyun")
             if sid != self.cfg.get("steam_id"):
                 self.cfg["steam_id"] = sid
                 write_json(CONFIG_FILE, self.cfg)
@@ -1524,6 +1629,221 @@ def run_gui():
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.quitNow()
 
+        # ======================================================== sorun bildir
+        @Slot()
+        def reportProblem(self):
+            """Sistem özeti ve kaydın son satırlarını panoya kopyalar."""
+            import platform
+            from PySide6.QtGui import QGuiApplication
+            try:
+                lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()[-150:]
+            except Exception:
+                lines = ["(kayıt okunamadı)"]
+            steam = sum(1 for g in self.games.values() if g.platform == "steam")
+            epic = sum(1 for g in self.games.values() if g.platform == "epic")
+            head = [
+                f"Oyun Kütüphanem {APP_VERSION} | {platform.platform()} | {'kurulu' if FROZEN else 'kaynak'}",
+                f"Steam bağlı: {'evet' if self.steamConnected else 'hayır'} ({steam} oyun) | "
+                f"Epic bağlı: {'evet' if self.epicAccount else 'hayır'} ({epic} oyun) | "
+                f"Ekran kartı: {'kapalı' if self.softwareActive else 'açık'}",
+                "-" * 60,
+            ]
+            QGuiApplication.clipboard().setText(mask("\n".join(head + lines)))
+            LOG.info("Sorun bildirimi panoya kopyalandı")
+            self.toast.emit("Kayıt panoya kopyalandı. Claude'a ya da bana yapıştırıp gönderebilirsin.", "ok")
+
+        @Slot()
+        def openLogFolder(self):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(DATA_DIR)))
+
+        def _log_toast(self, msg, kind):
+            if kind == "error":
+                LOG.warning(f"Uyarı gösterildi: {msg}")
+
+        def _log_alert(self, title, msg):
+            LOG.warning(f"Pencere gösterildi: {title} | {msg[:500]}")
+
+        # ======================================================== kapağı kendin seç
+        sgdbKey = Property(str, lambda self: self.cfg.get("sgdb_key", ""), notify=changed)
+
+        @Slot(str)
+        def saveSgdbKey(self, k):
+            self.cfg["sgdb_key"] = k.strip()
+            write_json(CONFIG_FILE, self.cfg)
+            self.changed.emit()
+
+        def _save_custom_cover(self, g, img):
+            if img.isNull():
+                self.toast.emit("Bu dosya resim olarak açılamadı.", "error")
+                return
+            if img.width() > 920:
+                img = img.scaledToWidth(920, Qt.TransformationMode.SmoothTransformation)
+            name = f"{hashlib.md5(g.key.encode()).hexdigest()}_{int(time.time())}.jpg"   # yeni ad: eski resim önbellekte kalmasın
+            self._remove_custom_files(g)
+            img.save(str(COVER_DIR / name), "JPG", 92)
+            img.convertToFormat(QImage.Format.Format_Grayscale8).save(str(COVER_DIR / name.replace(".jpg", "_gri.jpg")), "JPG", 90)
+            self.data.setdefault("custom_covers", {})[g.key] = name
+            self.save_data()
+            self._set_cover(g, COVER_DIR / name, COVER_DIR / name.replace(".jpg", "_gri.jpg"))
+            g.customCover = True
+            LOG.info(f"Özel kapak seçildi: {g.title}")
+            self.toast.emit(f"{g.title} için kapak değişti.", "ok")
+
+        def _remove_custom_files(self, g):
+            old = self.data.get("custom_covers", {}).get(g.key)
+            if old:
+                for f in (COVER_DIR / old, COVER_DIR / old.replace(".jpg", "_gri.jpg")):
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+
+        @Slot(str, str)
+        def setCoverFromFile(self, key, file_url):
+            g = self._game(key)
+            if g:
+                path = QUrl(file_url).toLocalFile() if file_url.startswith("file:") else file_url
+                self._save_custom_cover(g, QImage(path))
+
+        @Slot(str, str)
+        def setCoverFromUrl(self, key, url):
+            g = self._game(key)
+            if not g:
+                return
+            reply = self.net.get(self._req(url))
+
+            def done():
+                img = QImage()
+                if reply.error() == QNetworkReply.NetworkError.NoError and img.loadFromData(reply.readAll()):
+                    self._save_custom_cover(g, img)
+                else:
+                    self.toast.emit("Kapak indirilemedi, başka birini dene.", "error")
+                reply.deleteLater()
+            reply.finished.connect(done)
+
+        @Slot(str)
+        def resetCover(self, key):
+            g = self._game(key)
+            if not g:
+                return
+            self._remove_custom_files(g)
+            self.data.get("custom_covers", {}).pop(key, None)
+            self.save_data()
+            g.customCover = False
+            g.cover = g.coverGray = ""
+            g._asked_store = False
+            self.load_cover(g)
+            self.toast.emit(f"{g.title} için varsayılan kapağa dönüldü.", "ok")
+
+        @Slot(str)
+        def searchGridCovers(self, key):
+            g = self._game(key)
+            api_key = self.cfg.get("sgdb_key", "")
+            if not g or not api_key:
+                return
+
+            def job():
+                import requests
+                base = "https://www.steamgriddb.com/api/v2"
+                h = {"Authorization": f"Bearer {api_key}"}
+                params = {"dimensions": "460x215,920x430", "types": "static"}
+                if g.platform == "steam":
+                    r = requests.get(f"{base}/grids/steam/{g.id}", headers=h, params=params, timeout=20)
+                else:
+                    s = requests.get(f"{base}/search/autocomplete/{requests.utils.quote(g.title)}", headers=h, timeout=20)
+                    if s.status_code == 401:
+                        raise RuntimeError("SteamGridDB anahtarı geçersiz.")
+                    found = (s.json() or {}).get("data") or []
+                    if not found:
+                        return []
+                    r = requests.get(f"{base}/grids/game/{found[0]['id']}", headers=h, params=params, timeout=20)
+                if r.status_code == 401:
+                    raise RuntimeError("SteamGridDB anahtarı geçersiz. Ayarlar'dan kontrol et.")
+                if r.status_code == 404:
+                    return []
+                r.raise_for_status()
+                items = (r.json() or {}).get("data") or []
+                return [{"url": i["url"], "thumb": i.get("thumb") or i["url"]} for i in items if i.get("url")][:18]
+
+            def done(result, error):
+                if error:
+                    LOG.warning(f"SteamGridDB: {error}")
+                self.gridResults.emit(key, result or [], str(error) if error else "")
+            self.run_background(job, done)
+
+        # ======================================================== disk alanı
+        def _disk_drives(self):
+            return getattr(self, "_drives", [])
+
+        def _disk_games(self):
+            return getattr(self, "_disk_list", [])
+
+        diskDrives = Property("QVariantList", _disk_drives, notify=diskChanged)
+        diskGames = Property("QVariantList", _disk_games, notify=diskChanged)
+
+        @Slot()
+        def refreshDisk(self):
+            import shutil
+            games = [g for g in self.games.values()
+                     if g.installPath and g.state in (INSTALLED, PLAYING, BUSY, DOWNLOADING, STEAM_DOWNLOADING, PAUSED)]
+            games.sort(key=lambda g: -(g.sizeBytes or 0))
+            self._disk_list = games
+            drives = {}
+            folders = [g.installPath for g in games] + [self.cfg.get("epic_dir") or ""]
+            if self.steam_path:
+                folders += [str(d) for d in steam_library_dirs(self.steam_path)]
+            for folder in folders:
+                if not folder:
+                    continue
+                p = Path(folder)
+                while not p.exists() and p != p.parent:
+                    p = p.parent
+                try:
+                    usage = shutil.disk_usage(p)
+                except Exception:
+                    continue
+                dev = None
+                if IS_WINDOWS and p.anchor:
+                    name = p.anchor
+                else:
+                    try:     # Linux/macOS: diskin bağlandığı klasör
+                        dev = os.stat(p).st_dev
+                        m = p.resolve()
+                        while m != m.parent and os.stat(m.parent).st_dev == dev:
+                            m = m.parent
+                        name = str(m)
+                    except Exception:
+                        name = str(p)
+                d = drives.setdefault(name, {"name": name.rstrip("\\") or name, "total": usage.total,
+                                             "free": usage.free, "games": 0.0, "count": 0,
+                                             "_dev": dev if not IS_WINDOWS else None})
+            for g in games:
+                p = Path(g.installPath)
+                key = p.anchor if IS_WINDOWS and p.anchor else None
+                if key is None:
+                    try:
+                        dev = os.stat(p if p.exists() else p.parent).st_dev
+                        key = next((k for k, v in drives.items() if v.get("_dev") == dev), None)
+                    except Exception:
+                        key = None
+                if key in drives:
+                    drives[key]["games"] += g.sizeBytes or 0
+                    drives[key]["count"] += 1
+            out = []
+            for d in drives.values():
+                total = float(d["total"]) or 1.0
+                out.append({"name": d["name"], "totalText": format_bytes(d["total"]), "freeText": format_bytes(d["free"]),
+                            "gamesText": format_bytes(d["games"]) or "0 GB", "count": d["count"],
+                            "gamesPart": min(1.0, d["games"] / total), "usedPart": min(1.0, (d["total"] - d["free"]) / total),
+                            "low": d["free"] < 0.1 * d["total"]})
+            out.sort(key=lambda d: d["name"])
+            self._drives = out
+            self.diskChanged.emit()
+
+        @Slot(result=str)
+        def diskTotalText(self):
+            return format_bytes(sum(g.sizeBytes or 0 for g in getattr(self, "_disk_list", [])))
+
         @Slot()
         def openSteamTokenPage(self):
             QDesktopServices.openUrl(QUrl(STEAM_TOKEN_PAGE))
@@ -1604,6 +1924,7 @@ def run_gui():
                     continue
                 st = local.get(g.id)
                 old = g.state
+                g.sizeBytes = float(st["size"]) if st else 0.0
                 if not st:
                     g.state, g.progress, g.installPath = NOT_INSTALLED, -1.0, ""
                 elif st["to_dl"] > 0 and st["done"] < st["to_dl"]:
@@ -1630,6 +1951,7 @@ def run_gui():
         def _epic_loaded(self, result, error):
             self.epic_loading = False
             if error:
+                LOG.warning(f"Epic listesi alınamadı: {error}")
                 self.epicMsg = "Epic: hata"
                 self.toast.emit(f"Epic: {error}", "error")
                 return
@@ -1669,6 +1991,7 @@ def run_gui():
                 if inst:
                     g.state, g.progress = INSTALLED, -1.0
                     g.installPath = inst.get("path", "") or ""
+                    g.sizeBytes = float(inst.get("size") or 0)
                     latest = item.get("versions", {}).get(inst.get("platform", "Windows"))
                     g.update = bool(latest and inst.get("version") and latest != inst["version"])
                     updates += g.update
@@ -1787,7 +2110,7 @@ def run_gui():
             if g.updating:
                 args.append("--update-only")
             else:
-                base = self.cfg.get("epic_dir") or ""
+                base = getattr(g, "_base", None) or self.cfg.get("epic_dir") or ""
                 if base:
                     try:
                         Path(base).mkdir(parents=True, exist_ok=True)
@@ -1830,6 +2153,10 @@ def run_gui():
 
         def _epic_finished(self, g, code):
             proc = self.epic_proc
+            LOG.info(f"Epic indirmesi bitti: {g.title} | çıkış kodu {code} | "
+                     f"{'durduruldu' if g.id in self.paused_by_user else ''}")
+            if code != 0 and g.id not in self.paused_by_user and proc:
+                LOG.warning("Legendary son satırlar:\n" + "\n".join(proc._log[-15:]))
             self.epic_proc, self.epic_active = None, None
             g.stopping = False
             if g.id in self.paused_by_user:
@@ -1898,9 +2225,55 @@ def run_gui():
                 return
             if g.platform == "steam":
                 QDesktopServices.openUrl(QUrl(f"steam://install/{g.id}"))
-                self.toast.emit("Steam'de kurulum penceresi açıldı. İndirme başlayınca burada görünecek.", "info")
-            else:
-                self.enqueue(g, update=g.updating or (g.update and bool(g.installPath)))
+                self.toast.emit("Steam'de kurulum penceresi açıldı. Steam boş yeri orada gösterir. "
+                                "İndirme başlayınca burada görünecek.", "info")
+                return
+            update = g.updating or (g.update and bool(g.installPath))
+            resuming = g.state == PAUSED
+            if update or resuming:
+                self.enqueue(g, update=update)
+                return
+            self._check_space_then_install(g)
+
+        def _check_space_then_install(self, g):
+            base = getattr(g, "_base", None) or self.cfg.get("epic_dir") or ""
+            g.state, g.info = BUSY, "gereken yer hesaplanıyor"
+
+            def job():
+                return epic_install_size(g.id), free_space(base)
+
+            def done(result, error):
+                g.state, g.info = NOT_INSTALLED, ""
+                if error or not result or not result[0] or result[1] < 0:
+                    LOG.info(f"Boyut öğrenilemedi, kontrol atlandı: {g.title} | {error}")
+                    self.enqueue(g)       # öğrenemezsek indirmeyi engellemeyelim
+                    return
+                need, free = result
+                LOG.info(f"Yer kontrolü: {g.title} | gereken {format_bytes(need)} | boş {format_bytes(free)}")
+                if need + 2 * 1024 ** 3 > free:      # 2 GB pay bırak
+                    self.spaceProblem.emit(g.key, format_bytes(need), format_bytes(free), base)
+                    return
+                self.toast.emit(f"{g.title} kurulunca {format_bytes(need)} yer kaplayacak "
+                                f"(diskte {format_bytes(free)} boş).", "info")
+                self.enqueue(g)
+            self.run_background(job, done)
+
+        @Slot(str)
+        def installAnyway(self, key):
+            g = self._game(key)
+            if g:
+                LOG.info(f"Yer yetersiz ama yine de indiriliyor: {g.title}")
+                self.enqueue(g)
+
+        @Slot(str, str)
+        def installTo(self, key, folder):
+            g = self._game(key)
+            if not g:
+                return
+            if folder.startswith("file:"):
+                folder = QUrl(folder).toLocalFile()
+            g._base = str(Path(folder))
+            self._check_space_then_install(g)
 
         @Slot(str)
         def pause(self, key):
@@ -2188,6 +2561,8 @@ def run_gui():
     theme = Theme(bool(cfg.get("dark", True)), display_font, body_font)
     model = GamesModel()
     backend = Backend(app, theme, model, QSystemTrayIcon.isSystemTrayAvailable())
+    backend.toast.connect(backend._log_toast)
+    backend.alert.connect(backend._log_alert)
     backend._software_active = bool(cfg.get("software_render")) or os.environ.get("QT_QUICK_BACKEND") == "software"
     start_hidden = "--tray" in sys.argv and QSystemTrayIcon.isSystemTrayAvailable()
     backend._window_hidden = start_hidden
@@ -2221,7 +2596,11 @@ def run_gui():
     # --- QML ---
     engine = QQmlApplicationEngine()
     qml_errors = []
-    engine.warnings.connect(lambda ws: qml_errors.extend(w.toString() for w in ws))
+    def on_qml_warnings(ws):
+        for w in ws:
+            qml_errors.append(w.toString())
+            LOG.warning(f"Arayüz uyarısı: {w.toString()}")
+    engine.warnings.connect(on_qml_warnings)
     ctx = engine.rootContext()
     ctx.setContextProperty("backend", backend)
     ctx.setContextProperty("theme", theme)

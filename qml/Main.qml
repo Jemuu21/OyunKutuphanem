@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+import QtQuick.Dialogs
 import "state.js" as S
 
 // Oyun Kütüphanem: ana pencere
@@ -24,6 +25,7 @@ ApplicationWindow {
     property var detailGame: null
     property bool settingsOpen: false
     property bool skyOpen: false
+    property bool diskOpen: false
     property int visibilityBeforeSky: Window.Windowed
 
     // ------------------------------------------------------------ ortak işlevler
@@ -81,6 +83,7 @@ ApplicationWindow {
     }
     function closeTop() {
         if (detailGame) closeDetail()
+        else if (diskOpen) { diskOpen = false; focusView() }
         else if (settingsOpen) { settingsOpen = false; focusView() }
         else if (skyOpen) closeSky()
         else if (backend.search !== "") backend.search = ""
@@ -112,7 +115,7 @@ ApplicationWindow {
 
     // ------------------------------------------------------------ klavye kısayolları
     Shortcut { sequence: "Ctrl+F"; onActivated: { appRoot.closeTop(); search.forceActiveFocus(); search.selectAll() } }
-    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
+    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
     Shortcut { sequence: "Ctrl+1"; onActivated: { backend.viewMode = "grid"; focusView() } }
     Shortcut { sequence: "Ctrl+2"; onActivated: { backend.viewMode = "list"; focusView() } }
     Shortcut { sequence: "Ctrl+T"; onActivated: backend.dark = !backend.dark }
@@ -330,6 +333,7 @@ ApplicationWindow {
         AppMenuItem { text: "Listeyi yenile (F5)"; onTriggered: backend.reload_all() }
         AppMenuItem { text: "Gökyüzü modu (Ctrl+G)"; onTriggered: appRoot.openSky() }
         AppMenuItem { text: "Epic'te ücretsiz oyunlar"; onTriggered: { backend.checkFreeGames(); freeDialog.open() } }
+        AppMenuItem { text: "Disk alanı"; onTriggered: appRoot.diskOpen = true }
         AppMenuSeparator {}
         AppMenuItem {
             text: "Gizlenen oyunları göster"
@@ -343,6 +347,7 @@ ApplicationWindow {
         AppMenuSeparator {}
         AppMenuItem { text: "Güncellemeleri kontrol et"; visible: backend.updateEnabled; onTriggered: backend.checkUpdates(true) }
         AppMenuItem { text: "Klavye kısayolları (F1)"; onTriggered: appRoot.shortcutsHelp() }
+        AppMenuItem { text: "Sorun bildir"; onTriggered: backend.reportProblem() }
         AppMenuItem { text: "Ayarlar (Ctrl+,)"; onTriggered: appRoot.settingsOpen = true }
         AppMenuSeparator {}
         AppMenuItem { text: "Programdan çık"; onTriggered: backend.requestQuit() }
@@ -364,6 +369,15 @@ ApplicationWindow {
         visible: !!appRoot.detailGame
         game: appRoot.detailGame
         onCloseRequested: appRoot.closeDetail()
+    }
+    DiskPage {
+        anchors.top: titleStrip.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        z: 42
+        visible: appRoot.diskOpen
+        onCloseRequested: { appRoot.diskOpen = false; appRoot.focusView() }
     }
     SettingsPage {
         anchors.top: titleStrip.bottom
@@ -401,6 +415,58 @@ ApplicationWindow {
     }
     AppDialog { id: dialog }
     FreeGamesDialog { id: freeDialog; objectName: "freeDialog" }
+    CoverPicker { id: coverPicker; objectName: "coverPicker" }
+
+    // Epic oyunu için diskte yeterli yer yoksa
+    property var spaceGame: null
+    Connections {
+        target: backend
+        function onSpaceProblem(key, need, free, folder) {
+            appRoot.spaceGame = backend.allGames.find(g => g.key === key) || null
+            spaceDialog.need = need; spaceDialog.free = free; spaceDialog.folder = folder
+            spaceDialog.open()
+        }
+    }
+    Popup {
+        id: spaceDialog
+        property string need: ""
+        property string free: ""
+        property string folder: ""
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(520, parent ? parent.width - 48 : 520)
+        modal: true
+        focus: true
+        padding: 26
+        closePolicy: Popup.CloseOnEscape
+        Overlay.modal: Rectangle { color: theme.overlay }
+        background: Rectangle { radius: 14; color: theme.surface; border.color: theme.line }
+        contentItem: ColumnLayout {
+            spacing: 14
+            Text { text: "Diskte yeterli yer yok"; color: theme.text; font.family: theme.displayFont; font.pixelSize: 22; font.weight: Font.Bold }
+            Text {
+                Layout.fillWidth: true
+                text: (appRoot.spaceGame ? appRoot.spaceGame.title : "Bu oyun") + " kurulunca " + spaceDialog.need +
+                      " yer kaplayacak, ama seçili diskte " + spaceDialog.free + " boş.\n\nOyunu başka bir diske kurabilir ya da önce yer açabilirsin. Disk alanı sayfası, uzun süredir açmadığın büyük oyunları gösterir."
+                color: theme.text
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+            }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 8
+                AppButton { kind: "primary"; text: "Başka klasöre kur"; onClicked: { spaceDialog.close(); spaceFolder.open() } }
+                AppButton { text: "Disk alanına bak"; onClicked: { spaceDialog.close(); appRoot.diskOpen = true } }
+                AppButton { kind: "ghost"; text: "Yine de dene"; onClicked: { spaceDialog.close(); backend.installAnyway(appRoot.spaceGame.key) } }
+                AppButton { kind: "ghost"; text: "Vazgeç"; onClicked: spaceDialog.close() }
+            }
+        }
+    }
+    FolderDialog {
+        id: spaceFolder
+        title: "Oyun nereye kurulsun?"
+        onAccepted: backend.installTo(appRoot.spaceGame.key, selectedFolder.toString())
+    }
 
     Component.onCompleted: focusView()
 }

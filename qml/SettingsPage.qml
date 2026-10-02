@@ -129,6 +129,9 @@ Item {
                     AppButton { text: "Epic Launcher'daki oyunları içe aktar"; onClicked: backend.importFromLauncher() }
                     AppButton { text: "Bütün bulut kayıtlarını eşitle"; onClicked: backend.syncAllSaves() }
                     AppButton { visible: backend.isWindows; text: "Masaüstüne kısayol oluştur"; onClicked: backend.createShortcut() }
+                    AppButton { text: "Disk alanı"; onClicked: { sp.closeRequested(); appRoot.diskOpen = true } }
+                    AppButton { text: "Sorun bildir"; onClicked: backend.reportProblem() }
+                    AppButton { text: "Kayıt klasörünü aç"; onClicked: backend.openLogFolder() }
                 }
                 Text {
                     Layout.fillWidth: true

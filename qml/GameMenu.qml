@@ -40,6 +40,7 @@ AppMenu {
         visible: menu.has && !menu.epic
         onTriggered: backend.openStore(menu.game.key)
     }
+    AppMenuItem { text: "Kapağı değiştir…"; onTriggered: coverPicker.openFor(menu.game) }
     AppMenuSeparator {}
     AppMenuItem {
         text: menu.has && menu.game.favorite ? "Favorilerden çıkar" : "Favorilere ekle"
