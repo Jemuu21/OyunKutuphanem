@@ -1,5 +1,4 @@
-- Disk alanı sayfası (Menü > Disk alanı): her diskte ne kadar boş yer olduğu, oyunların ne kadar yer kapladığı ve kurulu oyunların büyükten küçüğe listesi. "Sadece 3 aydır açılmayanlar" ile yer açarken hangi oyunları silebileceğini görebilirsin.
-- Epic oyunu indirmeden önce diskte yeterli yer olup olmadığına bakılıyor. Yer yoksa uyarı çıkıyor, istersen oyunu başka bir diske kurabiliyorsun.
-- Kapağı kendin seç: bir oyuna sağ tıkla > "Kapağı değiştir…". Bilgisayarından resim seçebilir ya da SteamGridDB'den önerilen kapaklardan birini seçebilirsin.
-- Sorun bildir (Menü > Sorun bildir): program olanları bir kayıt dosyasına yazıyor, bu buton kaydı panoya kopyalıyor. Steam anahtarı ve jeton gibi gizli bilgiler kayda yazılmıyor.
-- Kapak resimleri istenirken artık tarayıcı kimliği gönderiliyor, bazı kapakların gelmemesine bu sebep olabiliyordu.
+- İndirme sırasında kartta "Duraklat" ve "İptal et" butonları var. Duraklatınca "Devam et" ve "İptal et" çıkıyor.
+- İptal et, indirmeyi durdurup o ana kadar inen bütün dosyaları siliyor ve kaç GB yer açıldığını söylüyor.
+- Bir güncellemeyi iptal edersen oyunun kendisi silinmiyor, sadece güncelleme duruyor.
+- Steam indirmelerinde İptal et, Steam'in kaldırma penceresini açıyor; Steam yarım inen dosyaları orada siliyor.

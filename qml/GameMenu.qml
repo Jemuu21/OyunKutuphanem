@@ -22,7 +22,7 @@ AppMenu {
     }
     AppMenuItem {
         text: "İndirmeyi iptal et"
-        visible: menu.has && menu.game.state === "paused"
+        visible: menu.has && (menu.game.state === "paused" || menu.game.state === "downloading" || menu.game.state === "queued")
         onTriggered: appRoot.askCancel(menu.game)
     }
     AppMenuItem {

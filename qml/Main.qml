@@ -48,9 +48,19 @@ ApplicationWindow {
         gameMenu.popup(item, x, y)
     }
     function askCancel(g) {
-        dialog.ask("İndirme iptal edilsin mi?",
-                   g.title + " için inen kısım silinmez ama indirme baştan başlar.",
-                   "İptal et", "Vazgeç", true, function() { backend.cancel(g.key) })
+        if (g.platform === "steam") {
+            dialog.ask("Steam indirmesi iptal edilsin mi?",
+                       "Steam'in kaldırma penceresi açılacak. Orada onaylarsan indirme durur ve inen dosyalar silinir.",
+                       "Steam'de aç", "Vazgeç", false, function() { backend.cancel(g.key) })
+        } else if (g.updating) {
+            dialog.ask(g.title + " güncellemesi iptal edilsin mi?",
+                       "Güncelleme durur. Oyunun kendisi silinmez, istediğin zaman tekrar güncelleyebilirsin.",
+                       "Güncellemeyi iptal et", "Vazgeç", true, function() { backend.cancel(g.key) })
+        } else {
+            dialog.ask(g.title + " indirmesi iptal edilsin mi?",
+                       "İndirme durur ve şimdiye kadar inen dosyaların hepsi silinir. Sonra indirmek istersen baştan başlar.",
+                       "İptal et ve sil", "Vazgeç", true, function() { backend.cancel(g.key) })
+        }
     }
     function askUninstall(g) {
         if (g.platform === "steam") { backend.uninstall(g.key); return }   // Steam kendisi sorar

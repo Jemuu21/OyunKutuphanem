@@ -55,8 +55,8 @@ function primary(g) {
     case "not_installed": return { text: "İndir", action: "install", enabled: true }
     case "queued": return { text: "Sırada", action: "", enabled: false }
     case "downloading":
-        return g.stopping ? { text: "Durduruluyor", action: "", enabled: false }
-                          : { text: "Durdur", action: "pause", enabled: true }
+        return g.stopping ? { text: g.info === "iptal ediliyor" ? "İptal ediliyor" : "Duraklatılıyor", action: "", enabled: false }
+                          : { text: "Duraklat", action: "pause", enabled: true }
     case "paused": return { text: "Devam et", action: "install", enabled: true, strong: true }
     case "steam_dl": return { text: "Steam'de yönet", action: "openSteamDownloads", enabled: true }
     case "installed":
@@ -66,6 +66,13 @@ function primary(g) {
     case "busy": return { text: "Bekle", action: "", enabled: false }
     }
     return { text: "", action: "", enabled: false }
+}
+
+// İptal et butonu ne zaman görünsün
+function canCancel(g) {
+    if (!g) return false
+    if (g.state === "downloading") return !g.stopping
+    return g.state === "paused" || g.state === "queued" || g.state === "steam_dl"
 }
 
 function sizeOrPlay(g) {

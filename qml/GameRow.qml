@@ -115,8 +115,8 @@ Item {
         }
         GameActions {
             Layout.fillWidth: false
-            Layout.preferredWidth: 190
-            Layout.maximumWidth: 190
+            Layout.preferredWidth: 270
+            Layout.maximumWidth: 270
             game: row.game
         }
     }

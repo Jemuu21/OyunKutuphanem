@@ -1002,6 +1002,7 @@ def run_gui():
                                      and not self.cfg.get("steam_via_token"))
             self._introActive = False
             self._watch = set()          # yeni oyun takibi açık olan platformlar
+            self._cancelling = set()     # iptal edilen ve temizlenecek indirmeler
             self._new_batch = []
             self._suppress_new = False   # hesap bağlarken gelen oyunlar "yeni" sayılmasın
 
@@ -1997,6 +1998,7 @@ def run_gui():
                     updates += g.update
                 elif (tmp / f"{g.id}.resume").exists():
                     g.state, g.update = PAUSED, False
+                    g.installPath = (self.data.get("partial", {}).get(g.id) or {}).get("path", "")
                 else:
                     g.state, g.progress, g.update = NOT_INSTALLED, -1.0, False
             self.remove_platform("epic", keys)
@@ -2136,6 +2138,10 @@ def run_gui():
                 m = re.search(r"Install path: (.+)$", line)
                 if m:
                     g.installPath = m.group(1).strip()
+                    if not g.updating:
+                        base = getattr(g, "_base", None) or self.cfg.get("epic_dir") or ""
+                        self.data.setdefault("partial", {})[g.id] = {"path": g.installPath, "base": base}
+                        self.save_data()
                 m = re.search(r"Download size: ([\d.]+) MiB", line)
                 if m:
                     g.downloadSize = f"{float(m.group(1)) / 1024:.1f} GB".replace(".", ",")
@@ -2159,11 +2165,21 @@ def run_gui():
                 LOG.warning("Legendary son satırlar:\n" + "\n".join(proc._log[-15:]))
             self.epic_proc, self.epic_active = None, None
             g.stopping = False
+            if g.id in self._cancelling:
+                self._cancelling.discard(g.id)
+                self.paused_by_user.discard(g.id)
+                if proc:
+                    proc.deleteLater()
+                self._cleanup_cancelled(g)
+                self._start_next()
+                return
             if g.id in self.paused_by_user:
                 g.state, g.info = PAUSED, ""
             elif code == 0:
                 g.state, g.progress, g.info = INSTALLED, -1.0, ""
                 g.update = False
+                self.data.get("partial", {}).pop(g.id, None)
+                self.save_data()
                 self.notify(f"{g.title} {'güncellendi' if g.updating else 'indirildi'}.", "ok")
                 g.updating = False
                 QTimer.singleShot(1000, self.load_epic)
@@ -2295,14 +2311,101 @@ def run_gui():
 
         @Slot(str)
         def cancel(self, key):
+            """İndirmeyi iptal eder ve o ana kadar inen dosyaları siler.
+            Güncelleme iptal edilirse oyunun kendisi silinmez."""
             g = self._game(key)
             if not g:
                 return
-            try:
-                (legendary_tmp_dir() / f"{g.id}.resume").unlink(missing_ok=True)
-            except Exception:
-                pass
-            g.state, g.progress, g.info = NOT_INSTALLED, -1.0, ""
+            if g.platform == "steam":
+                # Steam indirmelerini Steam yönetir; kaldırma penceresi yarım inen dosyaları da siler
+                QDesktopServices.openUrl(QUrl(f"steam://uninstall/{g.id}"))
+                return
+            LOG.info(f"İndirme iptal ediliyor: {g.title} | {'güncelleme' if g.updating else 'indirme'}")
+            if g in self.queue:
+                self.queue.remove(g)
+                g.queuePos = 0
+                self._refresh_queue()
+            if self.epic_active is g and self.epic_proc:
+                self._cancelling.add(g.id)
+                g.stopping = True
+                g.info = "iptal ediliyor"
+                kill_tree(self.epic_proc)   # bitince _epic_finished temizliği başlatır
+                proc = self.epic_proc
+
+                def still_running():
+                    try:
+                        if proc.state() != QProcess.ProcessState.NotRunning:
+                            proc.kill()
+                    except RuntimeError:
+                        pass
+                QTimer.singleShot(3000, still_running)
+                return
+            self._cleanup_cancelled(g)
+
+        def _cleanup_cancelled(self, g):
+            update = bool(g.updating)
+            partial = self.data.get("partial", {}).get(g.id) or {}
+            path = "" if update else (partial.get("path") or (g.installPath if g.state != INSTALLED else ""))
+            bases = [b for b in (partial.get("base"), getattr(g, "_base", None), self.cfg.get("epic_dir")) if b]
+            g.state, g.info, g.stopping = BUSY, "indirilen dosyalar siliniyor", False
+            app = g.id
+
+            def job():
+                import shutil
+                tmp = legendary_tmp_dir()
+                for f in (tmp / f"{app}.resume", tmp / f"{app}.repair"):
+                    try:
+                        f.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                if not path:
+                    return 0
+                target = Path(path).resolve()
+                # Güvenlik: sadece Epic oyun klasörünün İÇİNDEKİ bu oyunun klasörü silinir
+                safe = any(target != Path(b).resolve() and Path(b).resolve() in target.parents for b in bases)
+                if not safe or not target.exists():
+                    LOG.warning(f"İptal: klasör silinmedi (güvenli değil ya da yok): {target}")
+                    return 0
+                # Legendary bu oyunu kurulu sayıyorsa (yarım değil, tam kurulu) asla silme
+                try:
+                    if app in {i["app_name"] for i in legendary_json("list-installed", "--json")}:
+                        LOG.warning(f"İptal: {app} kurulu görünüyor, klasör silinmedi")
+                        return 0
+                except Exception:
+                    pass
+                size = sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
+                for attempt in range(5):     # dosyalar bir an kilitli kalabilir, birkaç kez dene
+                    try:
+                        shutil.rmtree(target)
+                        break
+                    except FileNotFoundError:
+                        break
+                    except Exception as e:
+                        if attempt == 4:
+                            raise RuntimeError(f"Bazı dosyalar silinemedi: {e}")
+                        time.sleep(1.5)
+                return size
+
+            def done(size, error):
+                self.data.get("partial", {}).pop(app, None)
+                self.save_data()
+                g.progress, g.info, g.downloadSize = -1.0, "", ""
+                if update:
+                    g.state, g.updating = INSTALLED, False
+                    self.toast.emit(f"{g.title} güncellemesi iptal edildi. Oyunun kendisi duruyor, "
+                                    "istersen sonra tekrar güncelleyebilirsin.", "info")
+                else:
+                    g.state, g.installPath, g.sizeBytes = NOT_INSTALLED, "", 0.0
+                    if error:
+                        self.alert.emit("İptal edildi ama bazı dosyalar silinemedi",
+                                        f"{error}\n\nKlasörü kendin silebilirsin: {path}")
+                    else:
+                        freed = f", indirilen {format_bytes(size)} silindi" if size else ""
+                        self.toast.emit(f"{g.title} indirmesi iptal edildi{freed}.", "ok")
+                LOG.info(f"İptal tamamlandı: {g.title} | silinen {format_bytes(size or 0) or '0'} | hata: {error}")
+                self._update_summary()
+                self.relayout()
+            self.run_background(job, done)
 
         @Slot(str)
         def play(self, key):

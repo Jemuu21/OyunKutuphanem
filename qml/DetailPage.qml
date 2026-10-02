@@ -138,8 +138,9 @@ Rectangle {
                         onClicked: backend.dequeue(page.game.key)
                     }
                     AppButton {
-                        visible: page.has && page.game.state === "paused"
-                        text: "İndirmeyi iptal et"
+                        visible: S.canCancel(page.game)
+                        kind: "danger"
+                        text: "İptal et"
                         onClicked: appRoot.askCancel(page.game)
                     }
                     AppButton {

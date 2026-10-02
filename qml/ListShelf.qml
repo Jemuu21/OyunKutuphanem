@@ -20,7 +20,7 @@ FocusScope {
         Text { Layout.preferredWidth: 170; text: "Durum"; color: theme.faint; font.pixelSize: 12 }
         Text { Layout.preferredWidth: 150; text: "Oynama"; color: theme.faint; font.pixelSize: 12 }
         Text { Layout.preferredWidth: 100; text: "Son oynama"; color: theme.faint; font.pixelSize: 12 }
-        Item { Layout.preferredWidth: 190 }
+        Item { Layout.preferredWidth: 270 }
     }
 
     ListView {

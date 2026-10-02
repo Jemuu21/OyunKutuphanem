@@ -19,6 +19,12 @@ RowLayout {
         enabled: ga.p.enabled
         onClicked: appRoot.runAction(ga.game, ga.p.action)
     }
+    AppButton {
+        visible: S.canCancel(ga.game)
+        compact: ga.compact
+        text: "İptal et"
+        onClicked: appRoot.askCancel(ga.game)
+    }
     DotsButton {
         id: dots
         compact: ga.compact
