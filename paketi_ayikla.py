@@ -47,6 +47,11 @@ def prune(root):
 
 
 if __name__ == "__main__":
+    # Windows konsolu Türkçe karakterleri yazamazsa çökmesin
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     target = sys.argv[1] if len(sys.argv) > 1 else "dist/OyunKutuphanem"
     mb = prune(target) / 1024 / 1024
     print(f"  Kullanılmayan parçalar silindi: {mb:.0f} MB")
