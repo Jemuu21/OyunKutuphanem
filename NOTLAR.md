@@ -1,2 +1,1 @@
-- Kütüphane görünümünde oyun sayfasına Steam'deki gibi bir "Oyna" çubuğu geldi: büyük Oyna butonunun yanında son oynama, oynama süresi, başarımlar ve kapladığı yer görünür.
-- Yeni çıkan Steam oyunlarında da oyunun büyük görseli ve logosu artık bulunuyor (Steam bu dosyaları yeni oyunlarda farklı bir yerde tutuyor).
+- Kütüphane görünümünde bazı oyunlarda logo yerine kapak resmi çıkıyordu (ARC Raiders gibi). Artık sadece arka planı saydam gerçek logolar kullanılıyor. Logo bulunamazsa oyunun adı yazılır.

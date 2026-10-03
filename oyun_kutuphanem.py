@@ -1900,7 +1900,7 @@ def run_gui():
                 self.heroReady.emit(key, *cache[key])
                 return
             h = hashlib.md5(key.encode()).hexdigest()
-            hero_path, logo_path = CACHE_DIR / f"hero_{h}.jpg", CACHE_DIR / f"logo2_{h}.png"
+            hero_path, logo_path = CACHE_DIR / f"hero_{h}.jpg", CACHE_DIR / f"logo3_{h}.png"
             result = {}
 
             def finish(name, path):
@@ -1928,6 +1928,21 @@ def run_gui():
             else:
                 fetch([], [])
 
+        @staticmethod
+        def _looks_like_logo(img):
+            """Logo arka planı saydam olmalı. Saydam değilse (kapak resmi vb.) logo sayılmaz."""
+            if not img.hasAlphaChannel():
+                return False
+            w, h = img.width(), img.height()
+            clear = total = 0
+            for i in range(24):
+                for j in range(12):
+                    x, y = int((i + 0.5) * w / 24), int((j + 0.5) * h / 12)
+                    total += 1
+                    if img.pixelColor(x, y).alpha() < 30:
+                        clear += 1
+            return clear >= total * 0.15
+
         def _fetch_image(self, urls, path, max_w, done):
             """Görseli önbellekten verir ya da sırayla adresleri dener. Bulunamazsa done(None)."""
             miss = Path(str(path) + ".yok")
@@ -1943,7 +1958,7 @@ def run_gui():
                 ok_img = False
                 if reply.error() == QNetworkReply.NetworkError.NoError:
                     img = QImage()
-                    if img.loadFromData(reply.readAll()):
+                    if img.loadFromData(reply.readAll()) and (path.suffix != ".png" or self._looks_like_logo(img)):
                         if img.width() > max_w:
                             img = img.scaledToWidth(max_w, Qt.TransformationMode.SmoothTransformation)
                         try:
@@ -1953,6 +1968,7 @@ def run_gui():
                             ok_img = False
                 reply.deleteLater()
                 if ok_img:
+                    LOG.info(f"Görsel alındı: {path.name} | {urls[0].split('?')[0]}")
                     done(path)
                 elif len(urls) > 1:
                     self._fetch_image(urls[1:], path, max_w, done)
