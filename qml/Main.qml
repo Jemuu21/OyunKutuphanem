@@ -57,7 +57,14 @@ ApplicationWindow {
              : k === "progress" ? theme.text : theme.muted
     }
     function runAction(g, action) {
-        if (g && action) backend[action](g.key)
+        if (!g || !action) return
+        if (action === "chooseSource") {
+            // Hem Steam'de hem Epic'te olan oyun: ayarda bir tercih varsa sormadan onu kullan
+            if (backend.dupPref === "steam" || backend.dupPref === "epic") backend.installFrom(g.key, backend.dupPref)
+            else sourcePick.openFor(g)
+            return
+        }
+        backend[action](g.key)
     }
     function enterOn(g) {
         if (!g) return
@@ -155,7 +162,7 @@ ApplicationWindow {
 
     // ------------------------------------------------------------ klavye kısayolları
     Shortcut { sequence: "Ctrl+F"; onActivated: { appRoot.closeTop(); search.forceActiveFocus(); search.selectAll() } }
-    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !pickDialog.opened && !wishDialog.opened && !localDialog.opened && !shelfPick.opened && !nameDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
+    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !pickDialog.opened && !wishDialog.opened && !localDialog.opened && !shelfPick.opened && !sourcePick.opened && !nameDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
     Shortcut { sequence: "Ctrl+1"; onActivated: { backend.viewMode = "grid"; focusView() } }
     Shortcut { sequence: "Ctrl+2"; onActivated: { backend.viewMode = "list"; focusView() } }
     Shortcut { sequence: "Ctrl+T"; onActivated: backend.dark = !backend.dark }
@@ -513,6 +520,7 @@ ApplicationWindow {
     WishlistDialog { id: wishDialog; objectName: "wishDialog" }
     LocalGameDialog { id: localDialog; objectName: "localDialog" }
     ShelfPickDialog { id: shelfPick; objectName: "shelfPick" }
+    SourcePickDialog { id: sourcePick; objectName: "sourcePick" }
     NameDialog { id: nameDialog; objectName: "nameDialog" }
     Connections {
         target: backend

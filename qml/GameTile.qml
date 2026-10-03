@@ -104,7 +104,7 @@ Item {
                     font.pixelSize: 12
                 }
                 Star {
-                    visible: tile.game.favorite
+                    visible: S.isFav(tile.game)
                     implicitWidth: 11
                     implicitHeight: 11
                 }

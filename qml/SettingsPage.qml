@@ -93,6 +93,33 @@ Item {
                     onToggled: backend.autoStart = checked
                 }
 
+                Heading { text: "Hem Steam'de hem Epic'te olan oyunlar" }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Bu oyunlar rafta tek kart olarak görünür. Kurulu olan kopya açılır. İkisi de kurulu değilse indirirken nereden indirileceğini seçersin."
+                    color: theme.muted
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                }
+                Segmented {
+                    objectName: "dupPrefSeg"
+                    options: ["Her seferinde sor", "Hep Steam", "Hep Epic"]
+                    current: backend.dupPref === "steam" ? 1 : backend.dupPref === "epic" ? 2 : 0
+                    onPicked: (i) => backend.dupPref = ["ask", "steam", "epic"][i]
+                }
+                RowLayout {
+                    visible: backend.splitCount > 0
+                    spacing: 12
+                    AppButton { text: "Hepsini yeniden birleştir"; onClicked: backend.mergeAllAgain() }
+                    Text {
+                        Layout.fillWidth: true
+                        text: backend.splitCount + " oyunu ayrı kartlarda göstermeyi seçtin."
+                        color: theme.muted
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
                 Heading { text: "Bildirimler ve güncellemeler" }
                 AppSwitch {
                     Layout.fillWidth: true

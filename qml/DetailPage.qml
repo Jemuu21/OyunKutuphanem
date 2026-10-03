@@ -89,8 +89,8 @@ Rectangle {
 
                 RowLayout {
                     spacing: 8
-                    Text { text: page.epic ? "Epic Games" : S.platformLabel(page.game); color: theme.muted; font.pixelSize: 14 }
-                    Star { visible: page.has && page.game.favorite; implicitWidth: 13; implicitHeight: 13 }
+                    Text { text: page.epic && !page.game.alt ? "Epic Games" : S.platformLabel(page.game); color: theme.muted; font.pixelSize: 14 }
+                    Star { visible: page.has && S.isFav(page.game); implicitWidth: 13; implicitHeight: 13 }
                 }
                 Text {
                     Layout.fillWidth: true
@@ -168,7 +168,7 @@ Rectangle {
                         onClicked: backend.syncSaves(page.game.key)
                     }
                     AppButton {
-                        text: page.has && page.game.favorite ? "Favorilerden çıkar" : "Favorilere ekle"
+                        text: page.has && S.isFav(page.game) ? "Favorilerden çıkar" : "Favorilere ekle"
                         onClicked: backend.toggleFavorite(page.game.key)
                     }
                     AppButton {
@@ -193,6 +193,83 @@ Rectangle {
                         kind: "danger"
                         text: page.has && page.game.platform === "local" ? "Raftan kaldır" : "Kaldır"
                         onClicked: appRoot.askUninstall(page.game)
+                    }
+                }
+
+                // Hem Steam'de hem Epic'te olan oyun: iki kopyanın durumu
+                ColumnLayout {
+                    id: sources
+                    objectName: "dupSources"
+                    visible: page.has && !!page.game.alt
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: 620
+                    Layout.topMargin: 8
+                    spacing: 6
+                    readonly property var steamCopy: page.has && page.game.alt ? (page.game.platform === "steam" ? page.game : page.game.alt) : null
+                    readonly property var epicCopy: page.has && page.game.alt ? (page.game.platform === "epic" ? page.game : page.game.alt) : null
+
+                    Text {
+                        text: "Kütüphanelerin"
+                        color: theme.text
+                        font.family: theme.displayFont
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                    }
+                    Repeater {
+                        model: sources.visible ? [sources.steamCopy, sources.epicCopy] : []
+                        Rectangle {
+                            id: srcRow
+                            required property var modelData
+                            readonly property var c: modelData
+                            readonly property string otherState: !!c && !!c.alt ? c.alt.state : "not_installed"
+                            Layout.fillWidth: true
+                            implicitHeight: 50
+                            radius: 8
+                            color: theme.surfaceHigh
+                            border.color: theme.line
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 8
+                                spacing: 12
+                                Text {
+                                    text: srcRow.c ? S.singleLabel(srcRow.c) : ""
+                                    color: theme.text
+                                    font.pixelSize: 14
+                                    font.weight: Font.Bold
+                                    Layout.preferredWidth: 110
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: S.statusText(srcRow.c)
+                                    color: appRoot.kindColor(S.statusKind(srcRow.c))
+                                    font.pixelSize: 13
+                                    elide: Text.ElideRight
+                                }
+                                AppButton {
+                                    visible: !!srcRow.c && srcRow.c.state === "installed"
+                                    text: "Oyna"
+                                    onClicked: backend.play(srcRow.c.key)
+                                }
+                                AppButton {
+                                    // diğer kopya inerken ikinci bir indirme başlatılmasın
+                                    visible: !!srcRow.c && srcRow.c.state === "not_installed"
+                                             && (srcRow.otherState === "not_installed" || srcRow.otherState === "installed")
+                                    text: srcRow.otherState === "installed" ? "Bunu da indir" : "Buradan indir"
+                                    onClicked: backend.installFrom(srcRow.c.key, srcRow.c.platform)
+                                }
+                                AppButton {
+                                    visible: !!srcRow.c && srcRow.c !== page.game && srcRow.c.state !== "installed" && srcRow.c.state !== "not_installed"
+                                    text: "Göster"
+                                    onClicked: appRoot.openDetail(srcRow.c)
+                                }
+                            }
+                        }
+                    }
+                    AppButton {
+                        kind: "ghost"
+                        text: "Steam ve Epic kopyasını ayrı kartlarda göster"
+                        onClicked: backend.splitDup(page.game.key)
                     }
                 }
 

@@ -1,5 +1,4 @@
-- Kendi rafların: rafın üstünde "Tümü", "Favoriler" ve kendi rafların var. Bir oyunu fareyle tutup bir rafa sürükleyince o rafa eklenir. Kendi rafında oyunları sürükleyerek istediğin sıraya dizebilirsin. Rafa sağ tıklayıp adını değiştirebilir ya da silebilirsin.
-- Oyundaki arkadaşların: Steam arkadaşlarından şu an oyunda olanlar rafın altında görünür. Lobisi açık olanların oyununa tek tıkla katılabilirsin.
-- İstatistikler (Menü > İstatistikler ya da Ctrl+I): toplam oynama süren, son 14 günün grafiği, en çok oynadıkların ve platformlara göre süreler.
-- Başarımlar: bir oyunun ayrıntı sayfasında Steam ve Epic başarımların görünür.
-- Rafta artık fareyle sürükleyince sayfa kaymıyor, oyun taşınıyor. Kaydırmak için fare tekerleğini ya da kaydırma çubuğunu kullan.
+- Hem Steam'de hem Epic'te olan oyunlar artık rafta tek kart: kartta "Steam + Epic" yazar. Kurulu olan kopya açılır.
+- İkisi de kurulu değilse "İndir"e basınca nereden indirileceğini seçersin (Steam ya da Epic). "Bundan sonra sormadan hep bunu kullan" dersen bir daha sormaz. Bu seçimi Ayarlar'dan değiştirebilirsin.
+- Oyunun ayrıntı sayfasında "Kütüphanelerin" bölümü iki kopyanın durumunu gösterir. İstersen "Steam ve Epic kopyasını ayrı kartlarda göster" ile eskisi gibi iki kart yapabilirsin.
+- Üstten Steam ya da Epic filtresini seçince o mağazadaki kopya görünür.

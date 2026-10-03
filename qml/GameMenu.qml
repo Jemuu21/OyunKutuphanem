@@ -48,9 +48,14 @@ AppMenu {
         onTriggered: backend.removeFromShelf(backend.currentShelf, menu.game.key)
     }
     AppMenuItem { text: "Kapağı değiştir…"; onTriggered: coverPicker.openFor(menu.game) }
+    AppMenuItem {
+        text: "Steam ve Epic kopyasını ayrı göster"
+        visible: menu.has && !!menu.game.alt
+        onTriggered: backend.splitDup(menu.game.key)
+    }
     AppMenuSeparator {}
     AppMenuItem {
-        text: menu.has && menu.game.favorite ? "Favorilerden çıkar" : "Favorilere ekle"
+        text: menu.has && (menu.game.favorite || (!!menu.game.alt && menu.game.alt.favorite)) ? "Favorilerden çıkar" : "Favorilere ekle"
         onTriggered: backend.toggleFavorite(menu.game.key)
     }
     AppMenuItem {

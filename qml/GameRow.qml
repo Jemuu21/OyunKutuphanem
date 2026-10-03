@@ -95,7 +95,7 @@ Item {
             RowLayout {
                 spacing: 6
                 Text { text: S.platformLabel(row.game); color: theme.muted; font.pixelSize: 12 }
-                Star { visible: row.game.favorite; implicitWidth: 11; implicitHeight: 11 }
+                Star { visible: S.isFav(row.game); implicitWidth: 11; implicitHeight: 11 }
             }
         }
         ColumnLayout {

@@ -135,6 +135,29 @@ def format_bytes(n):
     return f"{n / 1024 ** 2:.0f} MB"
 
 
+_EDITION = re.compile(
+    r"\b(standard|deluxe|digital deluxe|gold|ultimate|complete|definitive|enhanced|premium|"
+    r"game of the year|goty|anniversary|remastered)\s+edition\b|\bgoty\b|\bedition$")
+_TITLE_CACHE = {}
+
+
+def norm_title(t):
+    """İki mağazadaki aynı oyunu eşleştirmek için adı sadeleştirir
+    ("Rocket League®" ve "Rocket League" aynı çıkar)."""
+    r = _TITLE_CACHE.get(t)
+    if r is not None:
+        return r
+    import unicodedata
+    x = (t or "").replace("&", " and ").replace("™", " ").replace("®", " ").replace("©", " ")
+    x = unicodedata.normalize("NFKD", x)
+    x = "".join(c for c in x if not unicodedata.combining(c)).casefold()
+    x = re.sub(r"[^\w]+", " ", x).strip()
+    x = _EDITION.sub(" ", x)
+    x = re.sub(r"\s+", " ", x).strip()
+    _TITLE_CACHE[t] = x
+    return x
+
+
 def free_space(path):
     """Klasörün bulunduğu diskteki boş yer (klasör yoksa var olan ilk üst klasöre bakar)."""
     import shutil
@@ -258,7 +281,7 @@ def load_config():
            "dark": True, "reduce_motion": False, "software_render": False,
            "view": "grid", "onboarded": False,
            "free_notify": True, "auto_update_check": True, "wish_notify": True,
-           "show_friends": True, "shelf": ""}
+           "show_friends": True, "shelf": "", "dup_pref": "ask"}
     cfg.update(read_json(CONFIG_FILE, {}))
     return cfg
 
@@ -954,7 +977,22 @@ def run_gui():
         platform = Property(str, *acc("platform", ""), notify=changed)
         gid = Property(str, *acc("gid", ""), notify=changed)
         title = Property(str, *acc("title", ""), notify=changed)
-        state = Property(str, *acc("state", NOT_INSTALLED), notify=changed)
+        def _get_state(self):
+            return self._state
+
+        def _set_state(self, v):
+            if self._state != v:
+                self._state = v
+                self.changed.emit()
+                if self._alt is not None:      # iki kütüphanede de olan oyun: kartı doğru kopya temsil etsin
+                    p = self.parent()
+                    if p is not None and hasattr(p, "relayout"):
+                        p.relayout()
+
+        _state = NOT_INSTALLED
+        _alt = None
+        state = Property(str, _get_state, _set_state, notify=changed)
+        alt = Property(QObject, *acc("alt", None), notify=changed)          # diğer mağazadaki aynı oyun
         progress = Property(float, *acc("progress", -1.0), notify=changed)   # -1: bilinmiyor
         info = Property(str, *acc("info", ""), notify=changed)
         cover = Property(str, *acc("cover", ""), notify=changed)
@@ -1376,7 +1414,7 @@ def run_gui():
         steamProfile = Property(str, lambda self: self.cfg.get("steam_profile", ""), notify=changed)
         epicDir = Property(str, lambda self: self.cfg.get("epic_dir", ""), notify=changed)
         totalCount = Property(int, lambda self: len(self.games), notify=gamesChanged)
-        allGames = Property("QVariantList", lambda self: list(self.games.values()), notify=gamesChanged)
+        allGames = Property("QVariantList", lambda self: self._unique_games(), notify=gamesChanged)
         isWindows = Property(bool, lambda self: IS_WINDOWS, constant=True)
         # Program bu açılışta ekran kartı olmadan mı çiziyor? (ayar yeniden başlatınca geçerli olur)
         softwareActive = Property(bool, lambda self: bool(getattr(self, "_software_active", False)), constant=True)
@@ -1602,10 +1640,110 @@ def run_gui():
             items = self._recent_new()
             return self.games.get(items[-1]["key"]) if items else None
 
+        # ======================================================== iki kütüphanede de olan oyunlar
+        @staticmethod
+        def _pair_id(a, b):
+            s, e = (a, b) if a.platform == "steam" else (b, a)
+            return f"{s.key}|{e.key}"
+
+        def _compute_dups(self):
+            """Steam ve Epic'te aynı adla bulunan oyunları eşleştirir (g.alt = diğer kopya)."""
+            split = set(self.data.get("dup_split", []))
+            steam, epic = {}, {}
+            for g in self.games.values():
+                if g.platform == "steam":
+                    n = norm_title(g.title)
+                    old = steam.get(n)
+                    # aynı ad iki kez varsa kendi oyununu aile kopyasına tercih et
+                    if n and (old is None or (old.shared and not g.shared)):
+                        steam[n] = g
+                elif g.platform == "epic":
+                    n = norm_title(g.title)
+                    if n and n not in epic:
+                        epic[n] = g
+            pairs = {}
+            for n, e in epic.items():
+                s = steam.get(n)
+                if s is not None and self._pair_id(s, e) not in split:
+                    pairs[s.key], pairs[e.key] = e, s
+            for g in self.games.values():
+                want = pairs.get(g.key)
+                if g.alt is not want:
+                    g.alt = want
+            return pairs
+
+        def _rep(self, g):
+            """Eşleşmiş iki kopyadan kartta hangisi görünsün."""
+            a = g.alt
+            if a is None:
+                return g
+            gi, ai = g.state != NOT_INSTALLED, a.state != NOT_INSTALLED
+            if gi != ai:
+                return g if gi else a
+            s, e = (g, a) if g.platform == "steam" else (a, g)
+            if gi and ai:
+                if (e.lastPlayed or 0) > (s.lastPlayed or 0):
+                    return e
+                return s
+            return e if self.cfg.get("dup_pref") == "epic" else s
+
+        def _dup_hidden_keys(self):
+            """Kartı diğer kopyası temsil ettiği için listede gösterilmeyen oyunlar."""
+            return {g.key for g in self.games.values() if g.alt is not None and self._rep(g) is not g}
+
+        def _unique_games(self):
+            hidden = self._dup_hidden_keys()
+            return [g for g in self.games.values() if g.key not in hidden]
+
+        dupPref = _simple("dupPref", "dup_pref", str)
+        splitCount = Property(int, lambda self: len(self.data.get("dup_split", [])), notify=changed)
+
+        @Slot(str)
+        def splitDup(self, key):
+            g = self._game(key)
+            if not g or g.alt is None:
+                return
+            lst = self.data.setdefault("dup_split", [])
+            pid = self._pair_id(g, g.alt)
+            if pid not in lst:
+                lst.append(pid)
+            self.save_data()
+            title = g.title
+            g.alt.alt = None
+            g.alt = None
+            self._games_dirty = True
+            self.changed.emit()
+            self.relayout()
+            self.toast.emit(f"{title} artık Steam ve Epic için ayrı kartlarda görünecek.", "info")
+
+        @Slot()
+        def mergeAllAgain(self):
+            self.data["dup_split"] = []
+            self.save_data()
+            self._games_dirty = True
+            self.changed.emit()
+            self.relayout()
+            self.toast.emit("İki kütüphanede de olan oyunlar yeniden tek kartta birleştirildi.", "ok")
+
+        @Slot(str, str)
+        def installFrom(self, key, platform):
+            """Eşleşmiş oyunu seçilen mağazadan indir."""
+            g = self._game(key)
+            if not g:
+                return
+            target = g if g.platform == platform else (g.alt if g.alt is not None and g.alt.platform == platform else g)
+            LOG.info(f"İndirme kaynağı seçildi: {target.title} -> {platform}")
+            self.install(target.key)
+
         def relayout(self):
             self._relayout_timer.start()
 
         def _relayout_now(self):
+            self._compute_dups()
+            hidden_now = self._dup_hidden_keys()
+            if hidden_now != getattr(self, "_last_dup_hidden", None):
+                self._last_dup_hidden = hidden_now
+                self._games_dirty = True
             if getattr(self, "_games_dirty", False):
                 self._games_dirty = False
                 self.gamesChanged.emit()
@@ -1617,7 +1755,7 @@ def run_gui():
             order = {k: i for i, k in enumerate(shelf["games"])} if shelf else None
 
             def sort_key(g):
-                fav = 0 if g.favorite else 1
+                fav = 0 if (g.favorite or (g.alt is not None and g.alt.favorite)) else 1
                 title = g.title.casefold()
                 if mode == 4 and order is not None:
                     return (order.get(g.key, 10 ** 6), title)
@@ -1629,13 +1767,30 @@ def run_gui():
                     return (fav, 1 if g.state == NOT_INSTALLED else 0, title)
                 return (fav, title)
 
+            # Steam ya da Epic filtresi seçiliyse o mağazanın kopyası görünür; yoksa eşleşen iki oyun tek kart olur
+            dup_hidden = hidden_now if plat in (None, "local") else set()
+
+            def fav_of(g):
+                return g.favorite or (g.alt is not None and g.alt.favorite)
+
+            def in_shelf(g):
+                return g.key in order or (g.alt is not None and g.alt.key in order)
+
+            if order is not None:
+                base_order = order
+                order = dict(base_order)
+                for g in self.games.values():
+                    if g.alt is not None and g.alt.key in base_order:
+                        order[g.key] = min(order.get(g.key, 10 ** 6), base_order[g.alt.key])
+
             visible = [g for g in self.games.values()
-                       if (not q or q in g.title.casefold())
+                       if g.key not in dup_hidden
+                       and (not q or q in g.title.casefold())
                        and (not plat or g.platform == plat)
                        and (not self._onlyInstalled or g.state != NOT_INSTALLED)
                        and (self._showHidden or not g.hidden)
-                       and (cur != "fav" or g.favorite)
-                       and (order is None or g.key in order)]
+                       and (cur != "fav" or fav_of(g))
+                       and (order is None or in_shelf(g))]
             visible.sort(key=sort_key)
             self.model.set_items(visible)
 
@@ -1657,13 +1812,19 @@ def run_gui():
             if not g:
                 return None
             lst = self.data[name]
-            if key in lst:
-                lst.remove(key)
+            alt_key = g.alt.key if g.alt is not None else None
+            if key in lst or (alt_key and alt_key in lst):
+                # eşleşmiş oyunda iki kopyadan biri işaretliyse ikisinden de kaldır
+                for k in (key, alt_key):
+                    if k and k in lst:
+                        lst.remove(k)
             else:
                 lst.append(key)
             self.save_data()
-            g.favorite = key in self.data["favorites"]
-            g.hidden = key in self.data["hidden"]
+            for x in (g, g.alt):
+                if x is not None:
+                    x.favorite = x.key in self.data["favorites"]
+                    x.hidden = x.key in self.data["hidden"]
             self.relayout()
             return g
 
@@ -1959,7 +2120,7 @@ def run_gui():
 
         # ======================================================== Ne oynasam?
         def _pick_pool(self, mode):
-            installed = [g for g in self.games.values() if g.state == INSTALLED and not g.hidden]
+            installed = [g for g in self._unique_games() if g.state == INSTALLED and not g.hidden]
             now = time.time()
             if mode == "stale":      # 1 aydan uzun süredir açılmayanlar
                 pool = [g for g in installed if g.lastPlayed and now - g.lastPlayed > 30 * 86400]
@@ -2157,8 +2318,17 @@ def run_gui():
         def _shelf(self, sid):
             return next((s for s in self._shelves() if s["id"] == sid), None)
 
+        def _in_shelf(self, s, key):
+            """Raftaki anahtar: oyunun kendisi ya da (eşleşmişse) diğer mağazadaki kopyası."""
+            if key in s["games"]:
+                return key
+            g = self._game(key)
+            if g is not None and g.alt is not None and g.alt.key in s["games"]:
+                return g.alt.key
+            return None
+
         def _shelf_list(self):
-            return [{"id": s["id"], "name": s["name"], "count": sum(1 for k in s["games"] if k in self.games)}
+            return [{"id": s["id"], "name": s["name"], "count": len({self._rep(self.games[k]).key for k in s["games"] if k in self.games})}
                     for s in self._shelves()]
 
         shelves = Property("QVariantList", _shelf_list, notify=shelfChanged)
@@ -2223,14 +2393,14 @@ def run_gui():
         def addToShelf(self, sid, key):
             if sid == "fav":
                 g = self._game(key)
-                if g and not g.favorite:
+                if g and not (g.favorite or (g.alt is not None and g.alt.favorite)):
                     self.toggleFavorite(key)
                     self.toast.emit(f"{g.title} favorilere eklendi.", "ok")
                 return
             s, g = self._shelf(sid), self._game(key)
             if not s or not g:
                 return
-            if key in s["games"]:
+            if self._in_shelf(s, key):
                 self.toast.emit(f"{g.title} zaten '{s['name']}' rafında.", "info")
                 return
             s["games"].append(key)
@@ -2240,15 +2410,19 @@ def run_gui():
         @Slot(str, str)
         def removeFromShelf(self, sid, key):
             s = self._shelf(sid)
-            if s and key in s["games"]:
-                s["games"].remove(key)
+            k = self._in_shelf(s, key) if s else None
+            if k:
+                s["games"].remove(k)
                 self._shelves_changed(sid)
 
         @Slot(str, str, str)
         def moveInShelf(self, sid, key, before_key):
             """Raftaki oyunu, bırakıldığı oyunun yerine taşır."""
             s = self._shelf(sid)
-            if not s or key == before_key or key not in s["games"] or before_key not in s["games"]:
+            if not s:
+                return
+            key, before_key = self._in_shelf(s, key), self._in_shelf(s, before_key)
+            if not key or not before_key or key == before_key:
                 return
             games = s["games"]
             src, dst = games.index(key), games.index(before_key)
@@ -2258,7 +2432,7 @@ def run_gui():
 
         @Slot(str, result="QVariantList")
         def shelvesOf(self, key):
-            return [s["id"] for s in self._shelves() if key in s["games"]]
+            return [s["id"] for s in self._shelves() if self._in_shelf(s, key)]
 
         # ======================================================== oyundaki arkadaşlar
         showFriends = _simple("showFriends", "show_friends")
@@ -2340,6 +2514,7 @@ def run_gui():
         @Slot(result="QVariantMap")
         def statsData(self):
             games = list(self.games.values())
+            unique = self._unique_games()
             tr_days = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
             log = self.data.get("play_log", {})
             days = []
@@ -2359,8 +2534,8 @@ def run_gui():
             since = self.data.get("play_log_since", 0)
             return {
                 "totalMinutes": sum(g.playtime or 0 for g in games),
-                "gameCount": len(games),
-                "installedCount": sum(1 for g in games if g.state != NOT_INSTALLED),
+                "gameCount": len(unique),
+                "installedCount": sum(1 for g in unique if g.state != NOT_INSTALLED),
                 "familyCount": sum(1 for g in games if g.shared),
                 "recentMinutes": sum(d["minutes"] for d in days),
                 "days": days,

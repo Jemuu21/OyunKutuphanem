@@ -52,7 +52,11 @@ function colorFill(g) {
 function primary(g) {
     if (!g) return { text: "", action: "", enabled: false }
     switch (g.state) {
-    case "not_installed": return { text: "İndir", action: "install", enabled: true }
+    case "not_installed":
+        // Steam'de de Epic'te de olan oyun: nereden indirileceğini kullanıcı seçer
+        if (g.alt && g.alt.state === "not_installed")
+            return { text: "İndir", action: "chooseSource", enabled: true }
+        return { text: "İndir", action: "install", enabled: true }
     case "queued": return { text: "Sırada", action: "", enabled: false }
     case "downloading":
         return g.stopping ? { text: g.info === "iptal ediliyor" ? "İptal ediliyor" : "Duraklatılıyor", action: "", enabled: false }
@@ -84,9 +88,23 @@ function sizeOrPlay(g) {
 }
 
 // Kartta görünen platform adı
-function platformLabel(g) {
+function singleLabel(g) {
     if (!g) return ""
     if (g.platform === "steam") return g.shared ? "Steam ailesi" : "Steam"
     if (g.platform === "epic") return "Epic"
     return "Bilgisayar"
+}
+
+function platformLabel(g) {
+    if (!g) return ""
+    if (g.alt) {
+        var s = g.platform === "steam" ? g : g.alt
+        return singleLabel(s) + " + Epic"
+    }
+    return singleLabel(g)
+}
+
+// Favori mi? (eşleşmiş oyunda iki kopyadan biri yeter)
+function isFav(g) {
+    return !!g && (g.favorite || (!!g.alt && g.alt.favorite))
 }
