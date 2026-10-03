@@ -1,4 +1,5 @@
-- Hem Steam'de hem Epic'te olan oyunlar artık rafta tek kart: kartta "Steam + Epic" yazar. Kurulu olan kopya açılır.
-- İkisi de kurulu değilse "İndir"e basınca nereden indirileceğini seçersin (Steam ya da Epic). "Bundan sonra sormadan hep bunu kullan" dersen bir daha sormaz. Bu seçimi Ayarlar'dan değiştirebilirsin.
-- Oyunun ayrıntı sayfasında "Kütüphanelerin" bölümü iki kopyanın durumunu gösterir. İstersen "Steam ve Epic kopyasını ayrı kartlarda göster" ile eskisi gibi iki kart yapabilirsin.
-- Üstten Steam ya da Epic filtresini seçince o mağazadaki kopya görünür.
+- Yeni "Kütüphane" görünümü (üstte Izgara / Liste / Kütüphane, kısayolu Ctrl+3): solda bütün oyunların listesi, sağda seçtiğin oyunun sayfası.
+- Soldaki listede favorilerin en üstte. Kurulu oyunlar parlak, kurulu olmayanlar soluk görünür. İnen oyunun yanında yüzdesi ve ince bir ilerleme çizgisi var.
+- Oyun sayfasının üstünde oyunun büyük görseli ve logosu görünür (Steam oyunlarında). Bulunamazsa oyunun kapağı görünür.
+- Listede bir oyuna çift tıklamak kuruluysa oyunu açar. Yukarı / aşağı oklarla gezip Enter'a basabilirsin.
+- Oyunları buradan da tutup üstteki raflara sürükleyebilirsin.

@@ -71,7 +71,11 @@ ApplicationWindow {
         if (g.state === "installed" && !(g.update && g.platform === "epic")) backend.play(g.key)
         else openDetail(g)
     }
-    function openDetail(g) { detailGame = g }
+    function openDetail(g) {
+        // Kütüphane görünümünde oyun soldaki listede seçilir; listede yoksa (filtre vb.) sayfa üstte açılır
+        if (backend.viewMode === "library" && libraryView.select(g)) return
+        detailGame = g
+    }
     function closeDetail() { detailGame = null; focusView() }
     function showGameMenu(g, item, x, y) {
         gameMenu.game = g
@@ -111,7 +115,10 @@ ApplicationWindow {
                    (busy ? "\n\nDevam eden indirme duracak. Program açılınca 'Devam et' ile kaldığın yerden sürdürebilirsin." : ""),
                    "Güncelle", "Vazgeç", false, function() { backend.installUpdate() })
     }
-    function currentView() { return backend.viewMode === "list" ? listShelf.view : gridShelf.view }
+    function currentView() {
+        return backend.viewMode === "list" ? listShelf.view
+             : backend.viewMode === "library" ? libraryView.view : gridShelf.view
+    }
     function focusView() { currentView().forceActiveFocus() }
     function openSky() {
         if (skyOpen) return
@@ -165,6 +172,7 @@ ApplicationWindow {
     Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !pickDialog.opened && !wishDialog.opened && !localDialog.opened && !shelfPick.opened && !sourcePick.opened && !nameDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
     Shortcut { sequence: "Ctrl+1"; onActivated: { backend.viewMode = "grid"; focusView() } }
     Shortcut { sequence: "Ctrl+2"; onActivated: { backend.viewMode = "list"; focusView() } }
+    Shortcut { sequence: "Ctrl+3"; onActivated: { backend.viewMode = "library"; focusView() } }
     Shortcut { sequence: "Ctrl+T"; onActivated: backend.dark = !backend.dark }
     Shortcut { sequence: "F5"; onActivated: backend.reload_all() }
     Shortcut { sequence: "Ctrl+G"; onActivated: skyOpen ? closeSky() : openSky() }
@@ -180,7 +188,7 @@ ApplicationWindow {
                    "Enter   Kurulu oyunu oyna, değilse ayrıntılarını aç\n" +
                    "Boşluk   Seçili oyunun ayrıntıları\n" +
                    "Esc   Açık sayfayı kapat ya da aramayı temizle\n" +
-                   "Ctrl+1 / Ctrl+2   Izgara / liste görünümü\n" +
+                   "Ctrl+1 / Ctrl+2 / Ctrl+3   Izgara / liste / kütüphane görünümü\n" +
                    "Ctrl+T   Aydınlık / karanlık tema\n" +
                    "Ctrl+G   Gökyüzü modu\n" +
                    "Ctrl+R   Ne oynasam?\n" +
@@ -254,9 +262,10 @@ ApplicationWindow {
                 onToggled: backend.onlyInstalled = checked
             }
             Segmented {
-                options: ["Izgara", "Liste"]
-                current: backend.viewMode === "list" ? 1 : 0
-                onPicked: (i) => { backend.viewMode = i === 1 ? "list" : "grid"; appRoot.focusView() }
+                objectName: "viewSeg"
+                options: ["Izgara", "Liste", "Kütüphane"]
+                current: backend.viewMode === "list" ? 1 : backend.viewMode === "library" ? 2 : 0
+                onPicked: (i) => { backend.viewMode = ["grid", "list", "library"][i]; appRoot.focusView() }
             }
             DiceButton { onClicked: pickDialog.open() }
             ThemeSwitch {}
@@ -343,7 +352,14 @@ ApplicationWindow {
             GridShelf {
                 id: gridShelf
                 anchors.fill: parent
-                visible: backend.viewMode !== "list"
+                visible: backend.viewMode !== "list" && backend.viewMode !== "library"
+                focus: visible
+            }
+            LibraryView {
+                id: libraryView
+                objectName: "libraryView"
+                anchors.fill: parent
+                visible: backend.viewMode === "library"
                 focus: visible
             }
             ListShelf {

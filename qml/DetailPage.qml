@@ -11,56 +11,115 @@ Rectangle {
     readonly property bool epic: has && game.platform === "epic"
     readonly property var p: S.primary(game)
     signal closeRequested()
+    // Kütüphane görünümünde sağ tarafta gömülü durur: geri butonu yok, üstte büyük görsel var
+    property bool embedded: false
+    property string heroUrl: ""
+    property string logoUrl: ""
     property var ach: null          // başarımlar
     property bool achLoading: false
     property bool achAll: false
     onGameChanged: {
+        heroUrl = ""; logoUrl = ""
+        if (embedded && !!game) backend.heroFor(game.key)
         ach = null; achAll = false
         achLoading = !!game && game.platform !== "local"
         if (achLoading) backend.loadAchievements(game.key)
     }
     Connections {
         target: backend
+        function onHeroReady(key, hero, logo) {
+            if (!!page.game && key === page.game.key) { page.heroUrl = hero; page.logoUrl = logo }
+        }
         function onAchievementsLoaded(key, data) {
             if (!!page.game && key === page.game.key) { page.ach = data; page.achLoading = false }
         }
     }
 
     color: theme.bg
-    opacity: 0.4
-    Behavior on opacity { enabled: appRoot.motion; NumberAnimation { duration: 140 } }
-    onVisibleChanged: opacity = visible ? 1 : 0.4
+    opacity: embedded ? 1 : 0.4
+    Behavior on opacity { enabled: appRoot.motion && !page.embedded; NumberAnimation { duration: 140 } }
+    onVisibleChanged: opacity = (visible || embedded) ? 1 : 0.4
 
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: (w) => w.accepted = true }
 
     AppButton {
         id: back
         x: 24; y: 18
+        visible: !page.embedded
         kind: "ghost"
         text: "Rafa dön  (Esc)"
         onClicked: page.closeRequested()
     }
 
     Flickable {
-        anchors.top: back.bottom
-        anchors.topMargin: 10
+        id: flick
+        anchors.top: page.embedded ? parent.top : back.bottom
+        anchors.topMargin: page.embedded ? 0 : 10
         anchors.bottom: parent.bottom
         width: parent.width
-        contentHeight: content.implicitHeight + 60
+        contentHeight: content.y + content.implicitHeight + 60
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: AppScrollBar {}
+        Connections { target: page; function onGameChanged() { flick.contentY = 0 } }
+
+        // Kütüphane görünümü: üstte geniş görsel, alta doğru arka plana karışır, üstünde oyunun logosu
+        Item {
+            id: hero
+            visible: page.embedded && page.has
+            width: page.width
+            height: visible ? Math.round(Math.min(380, Math.max(220, page.width * 0.32))) : 0
+            clip: true
+            CoverArt {   // büyük görsel yoksa kapak (kurulu değilse gri)
+                anchors.fill: parent
+                visible: heroImg.status !== Image.Ready
+                game: page.game
+            }
+            Image {
+                id: heroImg
+                anchors.fill: parent
+                source: page.heroUrl
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                opacity: status === Image.Ready ? 1 : 0
+                Behavior on opacity { enabled: appRoot.motion; NumberAnimation { duration: 220 } }
+            }
+            Rectangle {   // alt kısım sayfanın rengine karışır
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: parent.height * 0.4
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: "transparent" }
+                    GradientStop { position: 1.0; color: theme.bg }
+                }
+            }
+            Image {
+                id: logoImg
+                x: content.x
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: parent.height * 0.24     // logo görselin üstünde dursun, solan kısımda değil
+                width: Math.min(sourceSize.width, parent.width * 0.38)
+                height: Math.min(parent.height * 0.4, width * (sourceSize.height / Math.max(1, sourceSize.width)))
+                fillMode: Image.PreserveAspectFit
+                horizontalAlignment: Image.AlignLeft
+                source: page.logoUrl
+                asynchronous: true
+                visible: status === Image.Ready
+            }
+        }
 
         RowLayout {
             id: content
             visible: page.has
             width: Math.min(page.width - 80, 1180)
             anchors.horizontalCenter: parent.horizontalCenter
-            y: 20
+            y: page.embedded ? hero.height + 4 : 20
             spacing: 48
 
             // sol: kapak rafın üstünde
             ColumnLayout {
+                visible: !page.embedded
                 Layout.alignment: Qt.AlignTop
                 spacing: 0
                 CoverArt {
@@ -94,6 +153,7 @@ Rectangle {
                 }
                 Text {
                     Layout.fillWidth: true
+                    visible: !(page.embedded && logoImg.visible)    // logo varsa adı tekrar yazma
                     text: page.has ? page.game.title : ""
                     color: theme.text
                     font.family: theme.displayFont

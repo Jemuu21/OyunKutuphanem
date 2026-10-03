@@ -1040,11 +1040,13 @@ def run_gui():
     # ------------------------------------------------------------ liste modeli
     class GamesModel(QAbstractListModel):
         GameRole = Qt.ItemDataRole.UserRole + 1
+        GroupRole = Qt.ItemDataRole.UserRole + 2     # kütüphane görünümündeki başlık (Favoriler / Oyunlar)
         countChanged = Signal()
 
         def __init__(self):
             super().__init__()
             self._items = []
+            self._groups = []
 
         def rowCount(self, parent=QModelIndex()):
             return 0 if parent.isValid() else len(self._items)
@@ -1052,18 +1054,35 @@ def run_gui():
         def data(self, index, role=Qt.ItemDataRole.DisplayRole):
             if index.isValid() and role == self.GameRole:
                 return self._items[index.row()]
+            if index.isValid() and role == self.GroupRole:
+                return self._groups[index.row()]
             return None
 
         def roleNames(self):
-            return {self.GameRole: QByteArray(b"game")}
+            return {self.GameRole: QByteArray(b"game"), self.GroupRole: QByteArray(b"group")}
+
+        @staticmethod
+        def _is_fav(g):
+            return g.favorite or (g.alt is not None and g.alt.favorite)
 
         def set_items(self, items):
-            if items == self._items:
+            favs = sum(1 for g in items if self._is_fav(g))
+            groups = [f"Favoriler ({favs})" if self._is_fav(g) else f"Oyunlar ({len(items) - favs})" for g in items]
+            if items == self._items and groups == self._groups:
                 return
             self.beginResetModel()
             self._items = list(items)
+            self._groups = groups
             self.endResetModel()
             self.countChanged.emit()
+
+        @Slot(str, result=int)
+        def indexOfKey(self, key):
+            """Oyunun listedeki yeri (eşleşmiş oyunda diğer kopyanın anahtarı da sayılır)."""
+            for i, g in enumerate(self._items):
+                if g.key == key or (g.alt is not None and g.alt.key == key):
+                    return i
+            return -1
 
         count = Property(int, lambda self: len(self._items), notify=countChanged)
 
@@ -1297,6 +1316,7 @@ def run_gui():
         shelfChanged = Signal()
         friendsChanged = Signal()
         achievementsLoaded = Signal(str, "QVariantMap")
+        heroReady = Signal(str, str, str)       # oyun, büyük görsel, logo (kütüphane görünümü)
         openGameRequested = Signal(QObject)
         localAdded = Signal(QObject)
         gridResults = Signal(str, "QVariantList", str)      # oyun, kapak önerileri, hata
@@ -1837,6 +1857,75 @@ def run_gui():
                              QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
             req.setRawHeader(b"User-Agent", f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) OyunKutuphanem/{APP_VERSION}".encode())
             return req
+
+        # ---- kütüphane görünümündeki büyük görsel ve oyun logosu
+        @Slot(str)
+        def heroFor(self, key):
+            g = self._game(key)
+            if not g:
+                return
+            cache = self.__dict__.setdefault("_hero_cache", {})
+            if key in cache:
+                self.heroReady.emit(key, *cache[key])
+                return
+            if g.platform == "steam":
+                bases = [f"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{g.id}/",
+                         f"https://cdn.cloudflare.steamstatic.com/steam/apps/{g.id}/"]
+                hero_urls = [b + "library_hero.jpg" for b in bases]
+                logo_urls = [b + "logo.png" for b in bases]
+            elif g.platform == "epic" and g.image_url:
+                hero_urls, logo_urls = [g.image_url], []
+            else:
+                hero_urls, logo_urls = [], []
+            h = hashlib.md5(key.encode()).hexdigest()
+            hero_path, logo_path = CACHE_DIR / f"hero_{h}.jpg", CACHE_DIR / f"logo_{h}.png"
+            result = {}
+
+            def finish(name, path):
+                result[name] = QUrl.fromLocalFile(str(path)).toString() if path else ""
+                if len(result) == 2:
+                    cache[key] = (result["hero"], result["logo"])
+                    self.heroReady.emit(key, result["hero"], result["logo"])
+
+            self._fetch_image(hero_urls, hero_path, 1600, lambda p: finish("hero", p))
+            self._fetch_image(logo_urls, logo_path, 640, lambda p: finish("logo", p))
+
+        def _fetch_image(self, urls, path, max_w, done):
+            """Görseli önbellekten verir ya da sırayla adresleri dener. Bulunamazsa done(None)."""
+            miss = Path(str(path) + ".yok")
+            if path.exists():
+                done(path)
+                return
+            if not urls or (miss.exists() and time.time() - miss.stat().st_mtime < 7 * 86400):
+                done(None)
+                return
+            reply = self.net.get(self._req(urls[0]))
+
+            def fin():
+                ok_img = False
+                if reply.error() == QNetworkReply.NetworkError.NoError:
+                    img = QImage()
+                    if img.loadFromData(reply.readAll()):
+                        if img.width() > max_w:
+                            img = img.scaledToWidth(max_w, Qt.TransformationMode.SmoothTransformation)
+                        try:
+                            path.parent.mkdir(parents=True, exist_ok=True)
+                            ok_img = img.save(str(path), "PNG" if path.suffix == ".png" else "JPG", 88)
+                        except Exception:
+                            ok_img = False
+                reply.deleteLater()
+                if ok_img:
+                    done(path)
+                elif len(urls) > 1:
+                    self._fetch_image(urls[1:], path, max_w, done)
+                else:
+                    try:
+                        miss.parent.mkdir(parents=True, exist_ok=True)
+                        miss.write_text("")
+                    except Exception:
+                        pass
+                    done(None)
+            reply.finished.connect(fin)
 
         def load_cover(self, g):
             custom = self.data.get("custom_covers", {}).get(g.key)
