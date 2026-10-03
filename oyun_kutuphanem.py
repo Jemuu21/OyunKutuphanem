@@ -655,6 +655,37 @@ def steam_wishlist_deals(steamid, token="", key=""):
     return {"total": len(appids), "deals": deals, "updated": int(time.time())}
 
 
+def steam_library_art(appid):
+    """Steam kütüphanesindeki büyük görselin ve logonun adresleri.
+    Yeni oyunlarda dosyalar kodlu bir klasörde durur; doğru yeri mağazaya sorar."""
+    import requests
+    hero, logo = [], []
+    try:
+        req = {"ids": [{"appid": int(appid)}], "context": {"language": "english", "country_code": "TR"},
+               "data_request": {"include_assets": True}}
+        r = requests.get(f"{STEAM_API}/IStoreBrowseService/GetItems/v1/",
+                         params={"input_json": json.dumps(req)}, timeout=15)
+        items = ((r.json() or {}).get("response") or {}).get("store_items", []) if r.ok else []
+        assets = (items[0].get("assets") or {}) if items else {}
+        fmt = assets.get("asset_url_format") or ""
+        if fmt:
+            base = "https://shared.akamai.steamstatic.com/store_item_assets/"
+            for key in ("library_hero", "library_hero_2x"):
+                if assets.get(key):
+                    url = base + fmt.replace("${FILENAME}", assets[key])
+                    hero.append(url)
+                    # logo, büyük görselle aynı klasörde durur
+                    logo.append(url.split("?")[0].rsplit("/", 1)[0] + "/logo.png")
+    except Exception as e:
+        LOG.info(f"Steam görsel bilgisi alınamadı: {appid} | {e}")
+    for b in (f"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{appid}/",
+              f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/"):
+        hero.append(b + "library_hero.jpg")
+        logo.append(b + "logo.png")
+    dedup = lambda xs: list(dict.fromkeys(xs))
+    return dedup(hero), dedup(logo)
+
+
 def steam_friends_in_game(steamid, token="", key=""):
     """Steam arkadaşlarından şu an oyunda olanlar."""
     import requests
@@ -1868,17 +1899,8 @@ def run_gui():
             if key in cache:
                 self.heroReady.emit(key, *cache[key])
                 return
-            if g.platform == "steam":
-                bases = [f"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{g.id}/",
-                         f"https://cdn.cloudflare.steamstatic.com/steam/apps/{g.id}/"]
-                hero_urls = [b + "library_hero.jpg" for b in bases]
-                logo_urls = [b + "logo.png" for b in bases]
-            elif g.platform == "epic" and g.image_url:
-                hero_urls, logo_urls = [g.image_url], []
-            else:
-                hero_urls, logo_urls = [], []
             h = hashlib.md5(key.encode()).hexdigest()
-            hero_path, logo_path = CACHE_DIR / f"hero_{h}.jpg", CACHE_DIR / f"logo_{h}.png"
+            hero_path, logo_path = CACHE_DIR / f"hero_{h}.jpg", CACHE_DIR / f"logo2_{h}.png"
             result = {}
 
             def finish(name, path):
@@ -1887,8 +1909,24 @@ def run_gui():
                     cache[key] = (result["hero"], result["logo"])
                     self.heroReady.emit(key, result["hero"], result["logo"])
 
-            self._fetch_image(hero_urls, hero_path, 1600, lambda p: finish("hero", p))
-            self._fetch_image(logo_urls, logo_path, 640, lambda p: finish("logo", p))
+            def fetch(hero_urls, logo_urls):
+                self._fetch_image(hero_urls, hero_path, 1920, lambda p: finish("hero", p))
+                self._fetch_image(logo_urls, logo_path, 640, lambda p: finish("logo", p))
+
+            def tried(path):
+                miss = Path(str(path) + ".yok")
+                return path.exists() or (miss.exists() and time.time() - miss.stat().st_mtime < 7 * 86400)
+
+            if g.platform == "steam" and not (tried(hero_path) and tried(logo_path)):
+                # önce mağazadan doğru adresleri öğren (arka planda)
+                self.run_background(lambda: steam_library_art(g.id),
+                                    lambda res, err: fetch(*(res or ([], []))))
+            elif g.platform == "steam":
+                fetch([], [])            # önbellekte ya da daha önce bulunamadı
+            elif g.platform == "epic" and g.image_url:
+                fetch([g.image_url], [])
+            else:
+                fetch([], [])
 
         def _fetch_image(self, urls, path, max_w, done):
             """Görseli önbellekten verir ya da sırayla adresleri dener. Bulunamazsa done(None)."""

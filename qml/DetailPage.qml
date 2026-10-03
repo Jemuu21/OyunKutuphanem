@@ -192,10 +192,69 @@ Rectangle {
                     }
                 }
 
+                // Kütüphane görünümü: büyük Oyna butonu ve yanında kısa bilgiler
+                Rectangle {
+                    id: playBar
+                    visible: page.embedded && page.has
+                    Layout.fillWidth: true
+                    implicitHeight: barRow.implicitHeight + 24
+                    radius: 10
+                    color: theme.surface
+                    border.color: theme.line
+
+                    component Stat: ColumnLayout {
+                        property string label: ""
+                        property string value: ""
+                        spacing: 3
+                        Text { text: parent.label; color: theme.faint; font.pixelSize: 11; font.weight: Font.Bold; font.letterSpacing: 1 }
+                        Text { text: parent.value; color: theme.text; font.pixelSize: 15; font.weight: Font.Bold }
+                    }
+
+                    Flow {
+                        id: barRow
+                        x: 12; y: 12
+                        width: parent.width - 24
+                        spacing: 30
+                        AppButton {
+                            objectName: "bigPlay"
+                            kind: page.p.strong ? "primary" : "secondary"
+                            text: page.p.text
+                            enabled: page.p.enabled
+                            implicitHeight: 50
+                            width: Math.max(170, implicitWidth)
+                            font.pixelSize: 18
+                            onClicked: appRoot.runAction(page.game, page.p.action)
+                        }
+                        Stat {
+                            label: "SON OYNAMA"
+                            value: page.has && page.game.lastPlayedText !== "" ? page.game.lastPlayedText : "Hiç"
+                            height: 50
+                        }
+                        Stat {
+                            label: "OYNAMA SÜRESİ"
+                            value: page.has && page.game.playtimeText !== "" ? page.game.playtimeText.replace(" oynandı", "") : "—"
+                            height: 50
+                        }
+                        Stat {
+                            visible: !!page.ach && page.ach.total > 0
+                            label: "BAŞARIMLAR"
+                            value: page.ach ? page.ach.done + " / " + page.ach.total : ""
+                            height: 50
+                        }
+                        Stat {
+                            visible: page.has && page.game.sizeText !== ""
+                            label: "KAPLADIĞI YER"
+                            value: page.has ? page.game.sizeText : ""
+                            height: 50
+                        }
+                    }
+                }
+
                 Flow {
                     Layout.fillWidth: true
                     spacing: 8
                     AppButton {
+                        visible: !page.embedded
                         kind: page.p.strong ? "primary" : "secondary"
                         text: page.p.text
                         enabled: page.p.enabled
@@ -350,12 +409,13 @@ Rectangle {
                         text: "Steam ailenden paylaşılıyor. Kurup oynayabilirsin, ama aynı anda sahibi oynuyorsa Steam izin vermeyebilir."
                         wrapMode: Text.WordWrap
                     }
-                    Label { text: "Oynama süresi" }
-                    Value { text: page.has && page.game.playtimeText !== "" ? page.game.playtimeText : "Henüz oynanmadı" }
-                    Label { text: "Son oynama" }
-                    Value { text: page.has && page.game.lastPlayedText !== "" ? page.game.lastPlayedText : "Kayıt yok" }
-                    Label { visible: page.has && page.game.sizeText !== ""; text: "Kapladığı yer" }
-                    Value { visible: page.has && page.game.sizeText !== ""; text: page.has ? page.game.sizeText : "" }
+                    // kütüphane görünümünde bunlar üstteki oyna çubuğunda
+                    Label { visible: !page.embedded; text: "Oynama süresi" }
+                    Value { visible: !page.embedded; text: page.has && page.game.playtimeText !== "" ? page.game.playtimeText : "Henüz oynanmadı" }
+                    Label { visible: !page.embedded; text: "Son oynama" }
+                    Value { visible: !page.embedded; text: page.has && page.game.lastPlayedText !== "" ? page.game.lastPlayedText : "Kayıt yok" }
+                    Label { visible: !page.embedded && page.has && page.game.sizeText !== ""; text: "Kapladığı yer" }
+                    Value { visible: !page.embedded && page.has && page.game.sizeText !== ""; text: page.has ? page.game.sizeText : "" }
                     Label { text: "Konum" }
                     Value { text: page.has && page.game.installPath !== "" ? page.game.installPath : "Kurulu değil" }
                     Label { visible: page.has && page.game.platform === "local"; text: "Dosya" }

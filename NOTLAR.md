@@ -1,5 +1,2 @@
-- Yeni "Kütüphane" görünümü (üstte Izgara / Liste / Kütüphane, kısayolu Ctrl+3): solda bütün oyunların listesi, sağda seçtiğin oyunun sayfası.
-- Soldaki listede favorilerin en üstte. Kurulu oyunlar parlak, kurulu olmayanlar soluk görünür. İnen oyunun yanında yüzdesi ve ince bir ilerleme çizgisi var.
-- Oyun sayfasının üstünde oyunun büyük görseli ve logosu görünür (Steam oyunlarında). Bulunamazsa oyunun kapağı görünür.
-- Listede bir oyuna çift tıklamak kuruluysa oyunu açar. Yukarı / aşağı oklarla gezip Enter'a basabilirsin.
-- Oyunları buradan da tutup üstteki raflara sürükleyebilirsin.
+- Kütüphane görünümünde oyun sayfasına Steam'deki gibi bir "Oyna" çubuğu geldi: büyük Oyna butonunun yanında son oynama, oynama süresi, başarımlar ve kapladığı yer görünür.
+- Yeni çıkan Steam oyunlarında da oyunun büyük görseli ve logosu artık bulunuyor (Steam bu dosyaları yeni oyunlarda farklı bir yerde tutuyor).
