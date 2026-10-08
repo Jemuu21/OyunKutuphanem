@@ -301,7 +301,7 @@ def load_config():
            "dark": True, "reduce_motion": False, "software_render": False,
            "view": "grid", "onboarded": False,
            "free_notify": True, "auto_update_check": True, "wish_notify": True,
-           "show_friends": True, "shelf": "", "dup_pref": "ask"}
+           "show_friends": True, "shelf": "", "dup_pref": "ask", "friends_panel": False}
     cfg.update(read_json(CONFIG_FILE, {}))
     return cfg
 
@@ -789,6 +789,7 @@ def _friend_details(ids, auth):
                 out.append({"steamid": p["steamid"], "name": p.get("personaname") or "Arkadaş",
                             "avatar": p.get("avatarmedium") or p.get("avatar") or "",
                             "online": int(p.get("personastate") or 0) > 0,
+                            "state": int(p.get("personastate") or 0), "lastSeen": int(p.get("lastlogoff") or 0),
                             "appid": str(p.get("gameid") or ""), "game": p.get("gameextrainfo") or "",
                             "lobby": p.get("lobbysteamid") or "", "profile": p.get("profileurl") or ""})
             continue
@@ -806,6 +807,8 @@ def _friend_details(ids, auth):
             out.append({"steamid": sid, "name": pub.get("persona_name") or "Arkadaş",
                         "avatar": _avatar_from_digest(pub.get("sha_digest_avatar") or ""),
                         "online": int(priv.get("persona_state") or 0) > 0,
+                        "state": int(priv.get("persona_state") or 0),
+                        "lastSeen": int(priv.get("last_seen_online") or priv.get("last_logoff_time") or 0),
                         "appid": game_id if game_id not in ("", "0") else "",
                         "game": priv.get("game_extra_info") or "",
                         "lobby": lobby if lobby not in ("", "0") else "",
@@ -2908,40 +2911,61 @@ def run_gui():
         showFriends = _simple("showFriends", "show_friends")
         friendsPlaying = Property("QVariantList", lambda self: getattr(self, "_friends", []), notify=friendsChanged)
 
+        # ---- arkadaş listesi paneli
+        friendsAll = Property("QVariantList", lambda self: getattr(self, "_friends_all", []), notify=friendsChanged)
+        friendsError = Property(str, lambda self: getattr(self, "_friends_error", ""), notify=friendsChanged)
+        friendsOnline = Property(int, lambda self: sum(1 for f in getattr(self, "_friends_all", []) if f["online"]),
+                                 notify=friendsChanged)
+        friendsPanel = _simple("friendsPanel", "friends_panel")
+
         @Slot(bool)
         def checkFriends(self, force=False):
-            if not self.showFriends:
+            if not (self.showFriends or self.friendsPanel):
                 if getattr(self, "_friends", []):
                     self._friends = []
                     self.friendsChanged.emit()
                 return
             if not force and getattr(self, "_window_hidden", False):
                 return          # pencere kapalıyken boşuna sorma
-            sid = str(self.cfg.get("steam_id") or "")
-            if self.cfg.get("steam_login") and WEB_OK:
-                def got(tok):
-                    if tok:
-                        s = str(jwt_payload(tok).get("sub") or sid)
-                        self.run_background(lambda: steam_friends_in_game(s, token=tok), self._friends_loaded)
-                self.steam_session.get_token(got)
-            elif self.cfg.get("steam_api_key") and sid:
-                key = self.cfg["steam_api_key"]
-                self.run_background(lambda: steam_friends_in_game(sid, key=key), self._friends_loaded)
+
+            def start(sid, tok, key):
+                if not (tok or key):
+                    self._friends_error = "Arkadaşlarını görmek için Ayarlar'dan Steam'e giriş yap."
+                    self.friendsChanged.emit()
+                    return
+                self.run_background(lambda: steam_friend_list(sid, tok, key), self._friends_loaded)
+            self._with_steam_auth(start)
 
         def _friends_loaded(self, result, error):
             if error:
                 if not getattr(self, "_friends_err_logged", False):
-                    LOG.info(f"Arkadaşlar alınamadı: {error}")
+                    LOG.info(f"Arkadaşlar alınamadı: {mask(error)}")
                     self._friends_err_logged = True
+                self._friends_error = user_error(error)
+                self.friendsChanged.emit()
                 return
+            now = time.time()
             for f in result:
-                f["owned"] = f"steam:{f['appid']}" in self.games
-            self._friends = result
+                f["owned"] = bool(f["appid"]) and f"steam:{f['appid']}" in self.games
+                f["status"] = (f["game"] + " oynuyor") if f["game"] else (
+                    {1: "Çevrim içi", 2: "Meşgul", 3: "Uzakta", 4: "Uzakta", 5: "Çevrim içi", 6: "Çevrim içi"}.get(f.get("state", 0))
+                    or (("Son görülme: " + format_last_played(f["lastSeen"])) if f.get("lastSeen") and now - f["lastSeen"] < 400 * 86400
+                        else "Çevrim dışı"))
+                f["group"] = "game" if f["game"] else ("online" if f["online"] else "offline")
+            result.sort(key=lambda x: (x["group"] != "game", x["group"] != "online", x["name"].casefold()))
+            self._friends_error = ""
+            self._friends_all = result
+            self._friends = sorted([f for f in result if f["game"] and f["appid"]] if self.showFriends else [],
+                                   key=lambda x: (x["game"].casefold(), x["name"].casefold()))
             self.friendsChanged.emit()
 
         @Slot(str)
+        def messageFriend(self, steamid):
+            QDesktopServices.openUrl(QUrl(f"steam://friends/message/{steamid}"))
+
+        @Slot(str)
         def joinFriend(self, steamid):
-            f = next((x for x in getattr(self, "_friends", []) if x["steamid"] == steamid), None)
+            f = next((x for x in getattr(self, "_friends_all", []) if x["steamid"] == steamid), None)
             if f and f.get("lobby"):
                 QDesktopServices.openUrl(QUrl(f"steam://joinlobby/{f['appid']}/{f['lobby']}/{f['steamid']}"))
 

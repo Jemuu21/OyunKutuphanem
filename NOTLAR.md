@@ -1,3 +1,3 @@
-- Kütüphane görünümünde oyun sayfası yeniden düzenlendi: başarımlar sağ sütunda, haberler ve güncellemeler sol tarafta "Konum"un altında.
-- Haberlerin resimleri yüklenince kartlar iç içe geçiyordu, düzeldi.
-- Steam başarımları için bir yol daha eklendi: Steam kütüphanesinin kendi kullandığı yol. Uygulama içi Steam girişiyle, profilin gizli olsa bile açtığın başarımlar görünür.
+- Arkadaş listesi: üstteki iki kişi simgesine bas (yanında kaç arkadaşının çevrim içi olduğu yazar). Sağda Steam arkadaşların açılır: oyunda olanlar, çevrim içi olanlar ve çevrim dışı olanlar ayrı ayrı. Çevrim dışı olanlarda en son ne zaman görüldüğü yazar.
+- Lobisi açık arkadaşının yanında "Katıl" butonu çıkar. Bir arkadaşa tıklayınca: Mesaj at (Steam sohbeti açılır), oyununa katıl, oynadığı oyunun sayfası, ortak oyunlarınız ve Steam profili. Çift tıklayınca direkt mesaj penceresi açılır.
+- Liste açıkken alttaki "Oyunda" şeridi gizlenir (aynı bilgi listede var).

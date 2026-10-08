@@ -259,6 +259,7 @@ ApplicationWindow {
             }
             FilterButton {}
             ViewSwitch {}
+            FriendsButton {}
             DiceButton { onClicked: pickDialog.open() }
             DotsButton {
                 id: menuButton
@@ -348,6 +349,10 @@ ApplicationWindow {
             Layout.preferredHeight: 40
         }
 
+        RowLayout {   // raf ve sağda arkadaş listesi
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 0
         Item {   // raf
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -379,10 +384,17 @@ ApplicationWindow {
                 onOpenSettings: appRoot.settingsOpen = true
             }
         }
+            FriendsPanel {
+                objectName: "friendsPanel"
+                visible: backend.friendsPanel
+                Layout.preferredWidth: 310
+                Layout.fillHeight: true
+            }
+        }
 
         FriendsStrip {
             Layout.fillWidth: true
-            visible: backend.showFriends && backend.friendsPlaying.length > 0
+            visible: backend.showFriends && !backend.friendsPanel && backend.friendsPlaying.length > 0
         }
 
         Rectangle {   // durum çubuğu
@@ -442,6 +454,7 @@ ApplicationWindow {
         AppMenuItem { text: "Epic'te ücretsiz oyunlar"; onTriggered: { backend.checkFreeGames(); freeDialog.open() } }
         AppMenuItem { text: "İstatistikler (Ctrl+I)"; onTriggered: appRoot.statsOpen = true }
         AppMenuItem { text: "Disk alanı"; onTriggered: appRoot.diskOpen = true }
+        AppMenuItem { text: "Arkadaş listesi"; onTriggered: { backend.friendsPanel = true; backend.checkFriends(true) } }
         AppMenuItem { text: "Arkadaşınla ortak oyunlar"; onTriggered: commonGames.openFor("", "") }
         AppMenuItem { text: "İstek listemdeki indirimler"; visible: backend.wishAvailable; onTriggered: { backend.checkWishlist(); wishDialog.open() } }
         AppMenuItem { text: "Kendi oyununu ekle…"; onTriggered: localDialog.openAdd() }
