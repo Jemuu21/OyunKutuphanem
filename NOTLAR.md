@@ -1,2 +1,4 @@
-- Steam başarımları: Steam'in başarım servisi uygulama içi girişle bazı oyunlarda cevap vermiyordu, bu yüzden başarımlar hiç görünmüyordu. Artık o olmazsa Steam topluluk sayfasındaki başarım listesinden alınıyor.
-- Steam profilinde "Oyun ayrıntıları" gizliyse artık bunu ve nasıl açılacağını söylüyor.
+- Arkadaşınla ortak oyunlar (Menü > Arkadaşınla ortak oyunlar, ya da alttaki "Oyunda" şeridinde bir arkadaşa tıklayıp "Ortak oyunlarımız"): bir Steam arkadaşını seçince ikinizde de olan oyunlar listelenir. Hangisinin çevrim içi co-op / PvP olduğu, kimin kaç saat oynadığı ve sende kurulu olup olmadığı görünür. Senin Epic oyunların da sayılır.
+- Oyun sayfasında "Haberler ve güncellemeler": oyunun Steam'deki son duyuruları ve yama notları. Tıklayınca tarayıcıda açılır. Kütüphane görünümünde geniş ekranda sağ tarafta durur.
+- Disk dolmak üzereyken (oyunların olduğu diskte 20 GB'tan az yer kalınca) rafın üstünde uyarı çıkar. "Yer aç"a basınca uzun süredir açmadığın oyunlar gösterilir.
+- Disk sayfasında yer açma önerisi: 3 aydan uzun süredir açmadığın oyunlar ve toplam kapladıkları yer. Birine tıklayıp kaldırabilirsin.

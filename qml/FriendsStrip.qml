@@ -87,6 +87,10 @@ Rectangle {
             onTriggered: backend.openFriendGame(friendMenu.f.appid)
         }
         AppMenuItem {
+            text: "Ortak oyunlarımız"
+            onTriggered: commonGames.openFor(friendMenu.f.steamid, friendMenu.f.name)
+        }
+        AppMenuItem {
             text: "Steam profili"
             visible: friendMenu.f && friendMenu.f.profile !== ""
             onTriggered: backend.openLink(friendMenu.f.profile)

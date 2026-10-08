@@ -747,6 +747,113 @@ def steam_friends_in_game(steamid, token="", key=""):
     return out
 
 
+def steam_friend_list(steamid, token="", key=""):
+    """Bütün Steam arkadaşları: ad, resim, çevrim içi mi, şu an ne oynuyor."""
+    import requests
+    auth = {"access_token": token} if token else ({"key": key} if key else {})
+    r = requests.get(f"{STEAM_API}/ISteamUser/GetFriendList/v1/",
+                     params={"steamid": steamid, "relationship": "friend", **auth}, timeout=20)
+    if r.status_code in (401, 403):
+        raise RuntimeError("Arkadaş listesi okunamadı (profilinde arkadaş listesi gizli olabilir).")
+    r.raise_for_status()
+    ids = [f["steamid"] for f in ((r.json() or {}).get("friendslist") or {}).get("friends", []) if f.get("steamid")]
+    out = []
+    for i in range(0, len(ids), 100):
+        r = requests.get(f"{STEAM_API}/ISteamUser/GetPlayerSummaries/v2/",
+                         params={"steamids": ",".join(ids[i:i + 100]), **auth}, timeout=20)
+        r.raise_for_status()
+        for p in ((r.json() or {}).get("response") or {}).get("players", []):
+            out.append({"steamid": p["steamid"], "name": p.get("personaname") or "Arkadaş",
+                        "avatar": p.get("avatarmedium") or p.get("avatar") or "",
+                        "online": int(p.get("personastate") or 0) > 0,
+                        "game": p.get("gameextrainfo") or ""})
+    # önce oyunda olanlar, sonra çevrim içi olanlar, sonra ada göre
+    out.sort(key=lambda x: (not x["game"], not x["online"], x["name"].casefold()))
+    return out
+
+
+def steam_owned_by(steamid, token="", key=""):
+    """Bir Steam kullanıcısının oyunları (arkadaşın oyun listesi herkese açıksa)."""
+    import requests
+    auth = {"access_token": token} if token else ({"key": key} if key else {})
+    r = requests.get(f"{STEAM_API}/IPlayerService/GetOwnedGames/v1/",
+                     params={"steamid": steamid, "include_appinfo": 1, "include_played_free_games": 1, **auth},
+                     timeout=30)
+    if r.status_code in (401, 403):
+        raise RuntimeError("Arkadaşının oyun listesi okunamadı.")
+    r.raise_for_status()
+    resp = (r.json() or {}).get("response") or {}
+    if "games" not in resp:
+        raise RuntimeError("Arkadaşının oyun listesi gizli. Steam'de profilinin 'Oyun ayrıntıları' "
+                           "kısmını herkese açık yaparsa ortak oyunlarınız görünür.")
+    return [{"appid": g["appid"], "name": g.get("name") or "", "minutes": int(g.get("playtime_forever") or 0)}
+            for g in resp["games"]]
+
+
+# Steam'in oyuncu kategorileri (mağazadaki "Çok oyunculu", "Çevrim içi co-op" vb.)
+PLAYER_MODES = [(38, "Çevrim içi co-op"), (9, "Co-op"), (36, "Çevrim içi PvP"), (49, "PvP"),
+                (39, "Aynı ekranda co-op"), (24, "Aynı ekranda"), (1, "Çok oyunculu"), (20, "MMO")]
+MULTI_IDS = {1, 9, 20, 24, 27, 36, 37, 38, 39, 47, 48, 49}
+
+
+def steam_player_categories(appids):
+    """Oyunların oyuncu kategorileri {appid: [kategori numaraları]}."""
+    import requests
+    out = {}
+    appids = [int(a) for a in appids]
+    for i in range(0, len(appids), 100):
+        req = {"ids": [{"appid": a} for a in appids[i:i + 100]],
+               "context": {"language": "turkish", "country_code": "TR"},
+               "data_request": {"include_basic_info": True}}
+        try:
+            r = requests.get(f"{STEAM_API}/IStoreBrowseService/GetItems/v1/",
+                             params={"input_json": json.dumps(req)}, timeout=30)
+            for it in ((r.json() or {}).get("response") or {}).get("store_items", []):
+                cats = it.get("categories") or {}
+                ids = list(cats.get("supported_player_categoryids") or [])
+                if it.get("appid"):
+                    out[str(it["appid"])] = ids
+        except Exception as e:
+            LOG.info(f"Oyun kategorileri alınamadı: {e}")
+    return out
+
+
+def _clean_news(text):
+    text = re.sub(r"\{STEAM_CLAN_IMAGE\}\S*", " ", text or "")
+    text = re.sub(r"\[/?[^\]]{0,80}\]", " ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:260] + ("…" if len(text) > 260 else "")
+
+
+def _news_image(text):
+    m = re.search(r"\{STEAM_CLAN_IMAGE\}(/[^\s\[\]\"'<>]+\.(?:png|jpe?g|gif|webp))", text or "", re.I)
+    if m:
+        return "https://clan.cloudflare.steamstatic.com/images" + m.group(1)
+    m = re.search(r"(https://[^\s\[\]\"'<>]+\.(?:png|jpe?g|webp))", text or "", re.I)
+    return m.group(1) if m else ""
+
+
+def steam_news(appid, count=6):
+    """Oyunun Steam'deki son duyuruları ve yamaları."""
+    import requests
+    r = requests.get(f"{STEAM_API}/ISteamNews/GetNewsForApp/v2/",
+                     params={"appid": appid, "count": 20, "maxlength": 1500, "format": "json"}, timeout=20)
+    r.raise_for_status()
+    items = ((r.json() or {}).get("appnews") or {}).get("newsitems") or []
+    own = [n for n in items if n.get("feedname") == "steam_community_announcements"]
+    out = []
+    for n in (own or items)[:count]:
+        tags = n.get("tags") or []
+        out.append({"title": (n.get("title") or "").strip(), "url": n.get("url") or "",
+                    "date": int(n.get("date") or 0),
+                    "label": "Yama notları" if "patchnotes" in tags else ("Duyuru" if n.get("feedname") == "steam_community_announcements"
+                                                                          else (n.get("feedlabel") or "Haber")),
+                    "text": _clean_news(n.get("contents")), "image": _news_image(n.get("contents"))})
+    return out
+
+
 def _steam_ach_official(appid, steamid, auth):
     """Steam'in resmi başarım servisi. (liste, hata) döner; liste None ise bu yoldan alınamadı."""
     import requests
@@ -1457,6 +1564,9 @@ def run_gui():
         wishChanged = Signal()
         shelfChanged = Signal()
         friendsChanged = Signal()
+        friendListLoaded = Signal("QVariantList", str)           # bütün arkadaşlar, hata
+        commonGamesLoaded = Signal(str, "QVariantMap")          # arkadaş, {items, error, name}
+        newsLoaded = Signal(str, "QVariantList")                # oyun, haberler
         achievementsLoaded = Signal(str, "QVariantMap")
         heroReady = Signal(str, str, str)       # oyun, büyük görsel, logo (kütüphane görünümü)
         openGameRequested = Signal(QObject)
@@ -1689,6 +1799,11 @@ def run_gui():
             self.upd_timer.timeout.connect(lambda: self.checkUpdates(False))
             self.upd_timer.start()
             QTimer.singleShot(15000, lambda: self.checkUpdates(False))
+            # Disk: yer azaldıysa haber ver (açılıştan biraz sonra ve yarım saatte bir)
+            self.disk_timer = QTimer(self, interval=30 * 60 * 1000)
+            self.disk_timer.timeout.connect(self.refreshDisk)
+            self.disk_timer.start()
+            QTimer.singleShot(25000, self.refreshDisk)
             if not self.needsOnboarding:
                 self.reload_all()
 
@@ -2737,6 +2852,117 @@ def run_gui():
             else:
                 QDesktopServices.openUrl(QUrl(f"https://store.steampowered.com/app/{appid}"))
 
+        # ======================================================== arkadaşınla ortak oyunlar
+        def _with_steam_auth(self, fn):
+            """fn(steamid, token, key) arka planda çalışır; giriş yoksa hata verir."""
+            sid = str(self.cfg.get("steam_id") or "")
+            key = self.cfg.get("steam_api_key") or ""
+            if self.cfg.get("steam_login") and WEB_OK:
+                def got(tok):
+                    s = str((jwt_payload(tok).get("sub") if tok else "") or sid)
+                    fn(s, tok or "", key if not tok else "")
+                self.steam_session.get_token(got)
+            elif sid and key:
+                fn(sid, "", key)
+            else:
+                fn("", "", "")
+
+        @Slot()
+        def loadFriendList(self):
+            def start(sid, tok, key):
+                if not sid or not (tok or key):
+                    self.friendListLoaded.emit([], "Arkadaşlarını görmek için Ayarlar'dan Steam'e giriş yap.")
+                    return
+
+                def done(res, err):
+                    if err:
+                        LOG.info(f"Arkadaş listesi alınamadı: {err}")
+                    self.friendListLoaded.emit(res or [], str(err) if err else "")
+                self.run_background(lambda: steam_friend_list(sid, tok, key), done)
+            self._with_steam_auth(start)
+
+        @Slot(str, str)
+        def loadCommonGames(self, friend_id, friend_name):
+            # Kendi oyunlarımızın anlık görüntüsü (arka plan işi Qt nesnelerine dokunmasın)
+            mine_steam = {g.id: g for g in self.games.values() if g.platform == "steam"}
+            mine_epic = {norm_title(g.title): g for g in self.games.values() if g.platform == "epic"}
+            modes_cache = read_json(LIST_CACHE, {}).get("player_modes") or {}
+
+            def start(sid, tok, key):
+                if not (tok or key):
+                    self.commonGamesLoaded.emit(friend_id, {"items": [], "error": "Steam'e giriş yapman gerekiyor.", "name": friend_name})
+                    return
+
+                def job():
+                    theirs = steam_owned_by(friend_id, tok, key)
+                    matches = []
+                    for t in theirs:
+                        g = mine_steam.get(str(t["appid"]))
+                        if g is None:
+                            g = mine_epic.get(norm_title(t["name"]))
+                        if g is not None:
+                            matches.append((t, g))
+                    need = [str(t["appid"]) for t, _ in matches if str(t["appid"]) not in modes_cache]
+                    fresh = steam_player_categories(need) if need else {}
+                    return matches, fresh
+
+                def done(res, err):
+                    if err:
+                        LOG.info(f"Ortak oyunlar alınamadı: {friend_name} | {err}")
+                        self.commonGamesLoaded.emit(friend_id, {"items": [], "error": str(err), "name": friend_name})
+                        return
+                    matches, fresh = res
+                    if fresh:
+                        modes_cache.update(fresh)
+                        self.save_list_cache("player_modes", modes_cache)
+                    items = []
+                    for t, g in matches:
+                        g = self._rep(g)          # Steam + Epic tek kartsa kartı temsil eden kopya
+                        cats = set(modes_cache.get(str(t["appid"])) or [])
+                        labels = [name for cid, name in PLAYER_MODES if cid in cats]
+                        multi = bool(cats & MULTI_IDS)
+                        items.append({"game": g, "title": g.title, "multi": multi, "known": bool(cats),
+                                      "modes": ", ".join(labels[:2]) if labels else ("Tek oyunculu" if cats else ""),
+                                      "theirMinutes": t["minutes"], "myMinutes": int(g.playtime or 0),
+                                      "installed": g.state != NOT_INSTALLED})
+                    # aynı oyun iki kez gelmesin (Steam + Epic eşleşmesi)
+                    seen, uniq = set(), []
+                    for it in items:
+                        if it["game"].key not in seen:
+                            seen.add(it["game"].key)
+                            uniq.append(it)
+                    uniq.sort(key=lambda x: (not x["multi"], not x["installed"],
+                                             -(x["theirMinutes"] + x["myMinutes"]), x["title"].casefold()))
+                    LOG.info(f"Ortak oyunlar: {friend_name} | {len(uniq)} oyun")
+                    self.commonGamesLoaded.emit(friend_id, {"items": uniq, "error": "", "name": friend_name})
+                self.run_background(job, done)
+            self._with_steam_auth(start)
+
+        # ======================================================== oyun haberleri
+        @Slot(str)
+        def loadNews(self, key):
+            g = self._game(key)
+            if not g:
+                return
+            steam = g if g.platform == "steam" else (g.alt if g.alt is not None and g.alt.platform == "steam" else None)
+            if steam is None:
+                self.newsLoaded.emit(key, [])
+                return
+            cache = self.__dict__.setdefault("_news_cache", {})
+            hit = cache.get(steam.id)
+            if hit and time.time() - hit[0] < 1800:
+                self.newsLoaded.emit(key, hit[1])
+                return
+
+            def done(res, err):
+                if err:
+                    LOG.info(f"Haberler alınamadı: {g.title} | {err}")
+                    res = []
+                else:
+                    cache[steam.id] = (time.time(), res)
+                self.newsLoaded.emit(key, res or [])
+            self.run_background(lambda: steam_news(steam.id), done)
+
         # ======================================================== oynama günlüğü ve istatistikler
         def _log_play(self, key, minutes):
             if minutes <= 0:
@@ -3045,10 +3271,35 @@ def run_gui():
                 out.append({"name": d["name"], "totalText": format_bytes(d["total"]), "freeText": format_bytes(d["free"]),
                             "gamesText": format_bytes(d["games"]) or "0 GB", "count": d["count"],
                             "gamesPart": min(1.0, d["games"] / total), "usedPart": min(1.0, (d["total"] - d["free"]) / total),
-                            "low": d["free"] < 0.1 * d["total"]})
+                            "low": d["free"] < 0.1 * d["total"], "freeBytes": float(d["free"]),
+                            "hasGames": d["count"] > 0})
             out.sort(key=lambda d: d["name"])
             self._drives = out
             self.diskChanged.emit()
+            self.changed.emit()      # yer azaldı uyarısı
+
+        LOW_SPACE = 20 * 1024 ** 3      # bu kadarın altına inince haber ver
+
+        def _low_space_text(self):
+            if time.time() - self.data.get("low_space_dismissed", 0) < 86400:
+                return ""
+            low = [d for d in getattr(self, "_drives", []) if d.get("hasGames") and d.get("freeBytes", 1e18) < self.LOW_SPACE]
+            if not low:
+                return ""
+            d = low[0]
+            return f"{d['name']} diskinde {d['freeText'] or 'çok az'} boş yer kaldı."
+
+        lowSpaceText = Property(str, _low_space_text, notify=changed)
+
+        @Slot()
+        def dismissLowSpace(self):
+            self.data["low_space_dismissed"] = int(time.time())
+            self.save_data()
+            self.changed.emit()
+
+        @Slot("QVariantList", result=str)
+        def sizeOfGames(self, games):
+            return format_bytes(sum((g.sizeBytes or 0) for g in games if g is not None))
 
         @Slot(result=str)
         def diskTotalText(self):

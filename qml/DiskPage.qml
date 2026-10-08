@@ -23,6 +23,8 @@ Rectangle {
         return stale(g) ? "3 aydan uzun süredir açılmadı" : "son: " + g.lastPlayedText
     }
     readonly property var shown: onlyStale ? games.filter(g => stale(g)) : games
+    // Yer açma önerisi: uzun süredir açılmayan kurulu oyunlar, büyükten küçüğe
+    readonly property var staleGames: games.filter(g => stale(g) && g.state === "installed" && g.sizeBytes > 0)
 
     function updateTotal() {
         var t = backend.diskTotalText()
@@ -105,6 +107,80 @@ Rectangle {
                                 font.pixelSize: 12
                             }
                         }
+                    }
+                }
+            }
+
+            Rectangle {   // yer açma önerisi
+                objectName: "spaceTip"
+                visible: page.staleGames.length > 0
+                Layout.fillWidth: true
+                Layout.topMargin: 6
+                implicitHeight: tipCol.implicitHeight + 28
+                radius: 10
+                color: theme.surface
+                border.color: theme.line
+                Rectangle { x: 0; y: 10; width: 3; height: parent.height - 20; radius: 1.5; color: theme.accent }
+                ColumnLayout {
+                    id: tipCol
+                    x: 18; y: 14
+                    width: parent.width - 36
+                    spacing: 10
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Yer açmak istersen: 3 aydan uzun süredir açmadığın " + page.staleGames.length + " oyun toplam "
+                                  + backend.sizeOfGames(page.staleGames) + " yer kaplıyor."
+                            color: theme.text
+                            font.pixelSize: 15
+                            font.weight: Font.Bold
+                            wrapMode: Text.WordWrap
+                        }
+                        AppButton {
+                            visible: !page.onlyStale
+                            text: "Hepsini göster"
+                            onClicked: page.onlyStale = true
+                        }
+                    }
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Repeater {
+                            model: page.staleGames.slice(0, 5)
+                            AbstractButton {
+                                id: tipChip
+                                required property var modelData
+                                height: 32
+                                width: tipRow.implicitWidth + 24
+                                hoverEnabled: true
+                                Accessible.name: modelData.title
+                                onClicked: appRoot.askUninstall(modelData)
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 400
+                                ToolTip.text: "Kaldır"
+                                background: Rectangle {
+                                    radius: 16
+                                    color: tipChip.hovered ? theme.surfaceHigh : theme.bg
+                                    border.color: tipChip.hovered ? theme.danger : theme.line
+                                }
+                                contentItem: Item {
+                                    Row {
+                                        id: tipRow
+                                        anchors.centerIn: parent
+                                        spacing: 8
+                                        Text { text: tipChip.modelData.title; color: theme.text; font.pixelSize: 13 }
+                                        Text { text: tipChip.modelData.sizeText; color: theme.muted; font.pixelSize: 13; font.weight: Font.Bold }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        text: "Bir oyuna tıklarsan kaldırmak isteyip istemediğin sorulur. Steam oyunlarında Steam kendi penceresini açar."
+                        color: theme.faint
+                        font.pixelSize: 12
                     }
                 }
             }

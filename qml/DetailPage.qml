@@ -15,12 +15,19 @@ Rectangle {
     property bool embedded: false
     property string heroUrl: ""
     property string logoUrl: ""
+    property var news: []
+    property bool newsLoading: false
+    // geniş ekranda haberler sağda ayrı sütunda, dar ekranda en altta
+    readonly property bool newsSide: embedded && width >= 1250
     property var ach: null          // başarımlar
     property bool achLoading: false
     property bool achAll: false
     onGameChanged: {
         heroUrl = ""; logoUrl = ""
         if (embedded && !!game) backend.heroFor(game.key)
+        news = []
+        newsLoading = !!game && (game.platform === "steam" || (!!game.alt && game.alt.platform === "steam"))
+        if (newsLoading) backend.loadNews(game.key)
         ach = null; achAll = false
         achLoading = !!game && game.platform !== "local"
         if (achLoading) backend.loadAchievements(game.key)
@@ -29,6 +36,9 @@ Rectangle {
         target: backend
         function onHeroReady(key, hero, logo) {
             if (!!page.game && key === page.game.key) { page.heroUrl = hero; page.logoUrl = logo }
+        }
+        function onNewsLoaded(key, items) {
+            if (!!page.game && key === page.game.key) { page.news = items; page.newsLoading = false }
         }
         function onAchievementsLoaded(key, data) {
             if (!!page.game && key === page.game.key) { page.ach = data; page.achLoading = false }
@@ -112,7 +122,7 @@ Rectangle {
         RowLayout {
             id: content
             visible: page.has
-            width: Math.min(page.width - 80, 1180)
+            width: Math.min(page.width - 80, page.newsSide ? 1500 : 1180)
             anchors.horizontalCenter: parent.horizontalCenter
             y: page.embedded ? hero.height + 4 : 20
             spacing: 48
@@ -536,6 +546,26 @@ Rectangle {
                     font.pixelSize: 12
                     wrapMode: Text.WordWrap
                 }
+
+                NewsList {
+                    objectName: "newsBottom"
+                    Layout.fillWidth: true
+                    Layout.topMargin: 10
+                    visible: !page.newsSide && (page.newsLoading || page.news.length > 0)
+                    items: page.news
+                    loading: page.newsLoading
+                }
+            }
+
+            NewsList {   // kütüphane görünümünde, geniş ekranda sağ sütun
+                objectName: "newsSide"
+                Layout.preferredWidth: 360
+                Layout.maximumWidth: 360
+                Layout.alignment: Qt.AlignTop
+                visible: page.newsSide && (page.newsLoading || page.news.length > 0)
+                narrow: true
+                items: page.news
+                loading: page.newsLoading
             }
         }
     }

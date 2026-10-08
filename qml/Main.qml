@@ -169,7 +169,7 @@ ApplicationWindow {
 
     // ------------------------------------------------------------ klavye kısayolları
     Shortcut { sequence: "Ctrl+F"; onActivated: { appRoot.closeTop(); search.forceActiveFocus(); search.selectAll() } }
-    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !pickDialog.opened && !wishDialog.opened && !localDialog.opened && !shelfPick.opened && !sourcePick.opened && !nameDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
+    Shortcut { sequence: "Esc"; enabled: !dialog.opened && !freeDialog.opened && !coverPicker.opened && !spaceDialog.opened && !pickDialog.opened && !wishDialog.opened && !localDialog.opened && !shelfPick.opened && !sourcePick.opened && !commonGames.opened && !nameDialog.opened && !gameMenu.visible && !mainMenu.visible; onActivated: appRoot.closeTop() }
     Shortcut { sequence: "Ctrl+1"; onActivated: { backend.viewMode = "grid"; focusView() } }
     Shortcut { sequence: "Ctrl+2"; onActivated: { backend.viewMode = "list"; focusView() } }
     Shortcut { sequence: "Ctrl+3"; onActivated: { backend.viewMode = "library"; focusView() } }
@@ -339,6 +339,18 @@ ApplicationWindow {
             AppButton { kind: "ghost"; compact: true; text: "Kapat"; onClicked: backend.dismissWishBanner() }
             AppButton { kind: "secondary"; compact: true; text: "Göster"; onClicked: wishDialog.open() }
         }
+        TopBanner {   // disk dolmak üzere
+            objectName: "lowSpaceBanner"
+            Layout.fillWidth: true
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            Layout.bottomMargin: 8
+            visible: backend.lowSpaceText !== ""
+            mark: theme.danger
+            text: backend.lowSpaceText
+            AppButton { kind: "ghost"; compact: true; text: "Kapat"; onClicked: backend.dismissLowSpace() }
+            AppButton { kind: "secondary"; compact: true; text: "Yer aç"; onClicked: { diskPage.onlyStale = true; appRoot.diskOpen = true } }
+        }
         TopBanner {   // Epic ücretsiz oyun şeridi
             Layout.fillWidth: true
             Layout.leftMargin: 24
@@ -452,6 +464,7 @@ ApplicationWindow {
         AppMenuItem { text: "Epic'te ücretsiz oyunlar"; onTriggered: { backend.checkFreeGames(); freeDialog.open() } }
         AppMenuItem { text: "İstatistikler (Ctrl+I)"; onTriggered: appRoot.statsOpen = true }
         AppMenuItem { text: "Disk alanı"; onTriggered: appRoot.diskOpen = true }
+        AppMenuItem { text: "Arkadaşınla ortak oyunlar"; onTriggered: commonGames.openFor("", "") }
         AppMenuItem { text: "İstek listemdeki indirimler"; visible: backend.wishAvailable; onTriggered: { backend.checkWishlist(); wishDialog.open() } }
         AppMenuItem { text: "Kendi oyununu ekle…"; onTriggered: localDialog.openAdd() }
         AppMenuSeparator {}
@@ -500,6 +513,7 @@ ApplicationWindow {
         onCloseRequested: { appRoot.statsOpen = false; appRoot.focusView() }
     }
     DiskPage {
+        id: diskPage
         anchors.top: titleStrip.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -550,6 +564,7 @@ ApplicationWindow {
     LocalGameDialog { id: localDialog; objectName: "localDialog" }
     ShelfPickDialog { id: shelfPick; objectName: "shelfPick" }
     SourcePickDialog { id: sourcePick; objectName: "sourcePick" }
+    CommonGamesDialog { id: commonGames; objectName: "commonGames" }
     NameDialog { id: nameDialog; objectName: "nameDialog" }
     Connections {
         target: backend
