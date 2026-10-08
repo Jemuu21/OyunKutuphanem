@@ -83,6 +83,26 @@ import logging
 LOG = logging.getLogger("oyunkutuphanem")
 
 
+def user_error(e):
+    """Hatanın kullanıcıya gösterilecek hali. Adresler, anahtarlar ve jetonlar asla ekrana çıkmaz."""
+    if e is None:
+        return ""
+    try:
+        import requests
+        if isinstance(e, requests.HTTPError):
+            code = getattr(getattr(e, "response", None), "status_code", "?")
+            return f"Sunucu isteği kabul etmedi (hata {code}). Biraz sonra tekrar dene."
+        if isinstance(e, (requests.ConnectionError, requests.Timeout)):
+            return "Bağlanılamadı. İnternet bağlantını kontrol edip tekrar dene."
+        if isinstance(e, requests.RequestException):
+            return "Bağlantıda bir sorun oldu. Biraz sonra tekrar dene."
+    except Exception:
+        pass
+    text = mask(str(e))
+    text = re.sub(r"https?://\S+", "", text).strip()
+    return text or "Bir sorun oldu."
+
+
 def mask(text):
     """Kayda yazılan metinden gizli bilgileri ve kullanıcı adını çıkarır."""
     text = str(text)
@@ -722,53 +742,91 @@ def steam_library_art(appid):
     return dedup(hero), dedup(logo)
 
 
-def steam_friends_in_game(steamid, token="", key=""):
-    """Steam arkadaşlarından şu an oyunda olanlar."""
+def _friend_ids(steamid, auth):
+    """Arkadaşların Steam numaraları. Uygulama içi girişte Steam'in eski servisi çalışmadığı için
+    önce Steam'in kendi sohbet uygulamasının kullandığı servisi dener."""
     import requests
-    auth = {"access_token": token} if token else ({"key": key} if key else {})
+    if "access_token" in auth:
+        r = requests.get(f"{STEAM_API}/IFriendsListService/GetFriendsList/v1/", params=auth, timeout=20)
+        if r.ok:
+            fl = ((r.json() or {}).get("response") or {}).get("friendslist") or {}
+            ids = [str(f.get("ulfriendid")) for f in fl.get("friends", [])
+                   if f.get("ulfriendid") and int(f.get("efriendrelationship") or 0) == 3]
+            if ids or "friends" in fl:
+                return ids
+        LOG.info(f"Arkadaş listesi (sohbet servisi) alınamadı: {r.status_code}")
     r = requests.get(f"{STEAM_API}/ISteamUser/GetFriendList/v1/",
                      params={"steamid": steamid, "relationship": "friend", **auth}, timeout=20)
     if r.status_code in (401, 403):
         raise RuntimeError("Arkadaş listesi okunamadı (profilinde arkadaş listesi gizli olabilir).")
     r.raise_for_status()
-    ids = [f["steamid"] for f in ((r.json() or {}).get("friendslist") or {}).get("friends", []) if f.get("steamid")]
+    return [f["steamid"] for f in ((r.json() or {}).get("friendslist") or {}).get("friends", []) if f.get("steamid")]
+
+
+def _avatar_from_digest(digest):
+    import base64
+    try:
+        h = base64.b64decode(digest).hex()
+        return f"https://avatars.fastly.steamstatic.com/{h}_medium.jpg" if h.strip("0") else ""
+    except Exception:
+        return ""
+
+
+def _friend_details(ids, auth):
+    """Arkadaşların adı, resmi ve ne oynadığı."""
+    import requests
     out = []
     for i in range(0, len(ids), 100):
+        part = ids[i:i + 100]
         r = requests.get(f"{STEAM_API}/ISteamUser/GetPlayerSummaries/v2/",
-                         params={"steamids": ",".join(ids[i:i + 100]), **auth}, timeout=20)
-        r.raise_for_status()
-        for p in ((r.json() or {}).get("response") or {}).get("players", []):
-            if p.get("gameid"):
+                         params={"steamids": ",".join(part), **auth}, timeout=20)
+        try:
+            players = ((r.json() or {}).get("response") or {}).get("players", []) if r.ok else []
+        except Exception:
+            players = []
+        if players:
+            for p in players:
                 out.append({"steamid": p["steamid"], "name": p.get("personaname") or "Arkadaş",
                             "avatar": p.get("avatarmedium") or p.get("avatar") or "",
-                            "appid": str(p["gameid"]), "game": p.get("gameextrainfo") or "Bir oyun",
+                            "online": int(p.get("personastate") or 0) > 0,
+                            "appid": str(p.get("gameid") or ""), "game": p.get("gameextrainfo") or "",
                             "lobby": p.get("lobbysteamid") or "", "profile": p.get("profileurl") or ""})
-    out.sort(key=lambda x: (x["game"].casefold(), x["name"].casefold()))
+            continue
+        LOG.info(f"Arkadaş bilgileri (eski servis) alınamadı: {r.status_code}")
+        # yedek: Steam'in sohbet uygulamasının kullandığı servis
+        params = {f"steamids[{k}]": sid for k, sid in enumerate(part)}
+        r = requests.get(f"{STEAM_API}/IPlayerService/GetPlayerLinkDetails/v1/", params={**params, **auth}, timeout=20)
+        r.raise_for_status()
+        for acc in ((r.json() or {}).get("response") or {}).get("accounts", []):
+            pub, priv = acc.get("public_data") or {}, acc.get("private_data") or {}
+            sid = str(pub.get("steamid") or "")
+            game_id = str(priv.get("game_id") or "")
+            lobby = str(priv.get("lobby_steam_id") or "")
+            vanity = pub.get("profile_url") or ""
+            out.append({"steamid": sid, "name": pub.get("persona_name") or "Arkadaş",
+                        "avatar": _avatar_from_digest(pub.get("sha_digest_avatar") or ""),
+                        "online": int(priv.get("persona_state") or 0) > 0,
+                        "appid": game_id if game_id not in ("", "0") else "",
+                        "game": priv.get("game_extra_info") or "",
+                        "lobby": lobby if lobby not in ("", "0") else "",
+                        "profile": (f"https://steamcommunity.com/id/{vanity}/" if vanity
+                                    else (f"https://steamcommunity.com/profiles/{sid}/" if sid else ""))})
     return out
 
 
 def steam_friend_list(steamid, token="", key=""):
     """Bütün Steam arkadaşları: ad, resim, çevrim içi mi, şu an ne oynuyor."""
-    import requests
     auth = {"access_token": token} if token else ({"key": key} if key else {})
-    r = requests.get(f"{STEAM_API}/ISteamUser/GetFriendList/v1/",
-                     params={"steamid": steamid, "relationship": "friend", **auth}, timeout=20)
-    if r.status_code in (401, 403):
-        raise RuntimeError("Arkadaş listesi okunamadı (profilinde arkadaş listesi gizli olabilir).")
-    r.raise_for_status()
-    ids = [f["steamid"] for f in ((r.json() or {}).get("friendslist") or {}).get("friends", []) if f.get("steamid")]
-    out = []
-    for i in range(0, len(ids), 100):
-        r = requests.get(f"{STEAM_API}/ISteamUser/GetPlayerSummaries/v2/",
-                         params={"steamids": ",".join(ids[i:i + 100]), **auth}, timeout=20)
-        r.raise_for_status()
-        for p in ((r.json() or {}).get("response") or {}).get("players", []):
-            out.append({"steamid": p["steamid"], "name": p.get("personaname") or "Arkadaş",
-                        "avatar": p.get("avatarmedium") or p.get("avatar") or "",
-                        "online": int(p.get("personastate") or 0) > 0,
-                        "game": p.get("gameextrainfo") or ""})
+    out = _friend_details(_friend_ids(steamid, auth), auth)
     # önce oyunda olanlar, sonra çevrim içi olanlar, sonra ada göre
     out.sort(key=lambda x: (not x["game"], not x["online"], x["name"].casefold()))
+    return out
+
+
+def steam_friends_in_game(steamid, token="", key=""):
+    """Steam arkadaşlarından şu an oyunda olanlar."""
+    out = [f for f in steam_friend_list(steamid, token, key) if f["game"] and f["appid"]]
+    out.sort(key=lambda x: (x["game"].casefold(), x["name"].casefold()))
     return out
 
 
@@ -779,9 +837,9 @@ def steam_owned_by(steamid, token="", key=""):
     r = requests.get(f"{STEAM_API}/IPlayerService/GetOwnedGames/v1/",
                      params={"steamid": steamid, "include_appinfo": 1, "include_played_free_games": 1, **auth},
                      timeout=30)
-    if r.status_code in (401, 403):
-        raise RuntimeError("Arkadaşının oyun listesi okunamadı.")
-    r.raise_for_status()
+    if not r.ok:
+        LOG.info(f"Arkadaşın oyunları alınamadı: {r.status_code}")
+        raise RuntimeError("Arkadaşının oyun listesi alınamadı. Steam profilinde oyunları gizli olabilir.")
     resp = (r.json() or {}).get("response") or {}
     if "games" not in resp:
         raise RuntimeError("Arkadaşının oyun listesi gizli. Steam'de profilinin 'Oyun ayrıntıları' "
@@ -2336,7 +2394,7 @@ def run_gui():
                 LOG.warning(f"Steam listesi alınamadı: {error}")
                 self.steamMsg = "Steam: hata"
                 if report:
-                    self.steamResult.emit(False, str(error))
+                    self.steamResult.emit(False, user_error(error))
                 else:
                     self.toast.emit(f"Steam: {error}", "error")
                 self.poll_steam_local()
@@ -2675,7 +2733,7 @@ def run_gui():
                 g.playtime, g.lastPlayed = rec["minutes"], rec["last"]
                 self.save_data()
                 if error:
-                    self.alert.emit("Oyun açılamadı", str(error))
+                    self.alert.emit("Oyun açılamadı", user_error(error))
                 if self._sortMode in (1, 2):
                     self.relayout()
             self.run_background(job, done)
@@ -2877,7 +2935,7 @@ def run_gui():
                 def done(res, err):
                     if err:
                         LOG.info(f"Arkadaş listesi alınamadı: {err}")
-                    self.friendListLoaded.emit(res or [], str(err) if err else "")
+                    self.friendListLoaded.emit(res or [], user_error(err))
                 self.run_background(lambda: steam_friend_list(sid, tok, key), done)
             self._with_steam_auth(start)
 
@@ -2909,7 +2967,7 @@ def run_gui():
                 def done(res, err):
                     if err:
                         LOG.info(f"Ortak oyunlar alınamadı: {friend_name} | {err}")
-                        self.commonGamesLoaded.emit(friend_id, {"items": [], "error": str(err), "name": friend_name})
+                        self.commonGamesLoaded.emit(friend_id, {"items": [], "error": user_error(err), "name": friend_name})
                         return
                     matches, fresh = res
                     if fresh:
@@ -3040,7 +3098,7 @@ def run_gui():
 
             def done(result, error):
                 data = dict(result or {"total": 0, "done": 0, "items": []})
-                data["error"] = str(error) if error else ""
+                data["error"] = user_error(error)
                 if error:
                     LOG.info(f"Başarımlar alınamadı: {g.title} | {error}")
                 else:
@@ -3204,7 +3262,7 @@ def run_gui():
             def done(result, error):
                 if error:
                     LOG.warning(f"SteamGridDB: {error}")
-                self.gridResults.emit(key, result or [], str(error) if error else "")
+                self.gridResults.emit(key, result or [], user_error(error))
             self.run_background(job, done)
 
         # ======================================================== disk alanı
@@ -3337,7 +3395,7 @@ def run_gui():
                 self._steam_apply(read_json(LIST_CACHE, {}).get("steam") or [])
                 self.steamMsg = "Steam: liste güncellenemedi"
                 if report:
-                    self.steamResult.emit(False, str(error))
+                    self.steamResult.emit(False, user_error(error))
                 return
             owned, family = result["owned"], result["family"]
             LOG.info(f"Steam (oturum): {len(owned)} kendi oyunu, {len(family)} aile oyunu")
@@ -3449,7 +3507,7 @@ def run_gui():
 
             def done(result, error):
                 if error:
-                    self.familyResult.emit(False, str(error))
+                    self.familyResult.emit(False, user_error(error))
                     return
                 self.save_list_cache("steam_family", {"apps": result["family"], "in_family": result["in_family"],
                                                       "updated": result["updated"]})
@@ -4067,7 +4125,7 @@ def run_gui():
                 g.playtime, g.lastPlayed = rec["minutes"], rec["last"]
                 self.save_data()
                 if error or log:
-                    self.notify(f"{g.title}: " + "; ".join(log + ([str(error)] if error else [])), "error")
+                    self.notify(f"{g.title}: " + "; ".join(log + ([user_error(error)] if error else [])), "error")
                 elif cloud:
                     self.notify(f"{g.title}: kayıtların buluta yüklendi.", "ok")
                 if self._sortMode in (1, 2):
@@ -4112,7 +4170,7 @@ def run_gui():
 
             def done(_, error):
                 if error:
-                    self.alert.emit("Kaldırılamadı", str(error))
+                    self.alert.emit("Kaldırılamadı", user_error(error))
                     g.state = INSTALLED
                 else:
                     g.state, g.installPath, g.update = NOT_INSTALLED, "", False

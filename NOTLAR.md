@@ -1,4 +1,2 @@
-- Arkadaşınla ortak oyunlar (Menü > Arkadaşınla ortak oyunlar, ya da alttaki "Oyunda" şeridinde bir arkadaşa tıklayıp "Ortak oyunlarımız"): bir Steam arkadaşını seçince ikinizde de olan oyunlar listelenir. Hangisinin çevrim içi co-op / PvP olduğu, kimin kaç saat oynadığı ve sende kurulu olup olmadığı görünür. Senin Epic oyunların da sayılır.
-- Oyun sayfasında "Haberler ve güncellemeler": oyunun Steam'deki son duyuruları ve yama notları. Tıklayınca tarayıcıda açılır. Kütüphane görünümünde geniş ekranda sağ tarafta durur.
-- Disk dolmak üzereyken (oyunların olduğu diskte 20 GB'tan az yer kalınca) rafın üstünde uyarı çıkar. "Yer aç"a basınca uzun süredir açmadığın oyunlar gösterilir.
-- Disk sayfasında yer açma önerisi: 3 aydan uzun süredir açmadığın oyunlar ve toplam kapladıkları yer. Birine tıklayıp kaldırabilirsin.
+- Arkadaşınla ortak oyunlar: uygulama içi Steam girişiyle arkadaş listesi açılmıyordu (hata 400). Artık Steam'in kendi sohbet uygulamasının kullandığı yoldan alınıyor. Alttaki "Oyunda" şeridi de aynı sorundan etkileniyordu, o da düzeldi.
+- Güvenlik: hata mesajlarında Steam giriş bilgisinin bir kısmı (jeton) ekranda görünebiliyordu. Artık hata mesajlarında adres, anahtar ya da jeton hiçbir zaman gösterilmiyor, sadece kısa bir açıklama çıkıyor.
