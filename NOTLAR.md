@@ -1,2 +1,2 @@
-- 4.7'deki hata düzeltildi: Steam'de yeni başlayan indirme programda hemen %99 görünüyordu. Steam oyunun dosyalarını indirmeden önce boş olarak açtığı için dosya boyutlarına bakmak yanlış sonuç veriyordu. Artık yüzde, Steam'in o ana kadar diske yazdığı veri miktarından hesaplanıyor.
-- Pencere tam ekran değilken sağ üstteki menü butonu (üç nokta) kesik görünüyordu. Artık yer daralınca önce "Oyun Kütüphanem" başlığı gizleniyor, sonra arama kutusu küçülüyor; menü butonu hep tam görünüyor.
+- Steam başarımları: Steam'in başarım servisi uygulama içi girişle bazı oyunlarda cevap vermiyordu, bu yüzden başarımlar hiç görünmüyordu. Artık o olmazsa Steam topluluk sayfasındaki başarım listesinden alınıyor.
+- Steam profilinde "Oyun ayrıntıları" gizliyse artık bunu ve nasıl açılacağını söylüyor.

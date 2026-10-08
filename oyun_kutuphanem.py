@@ -747,33 +747,108 @@ def steam_friends_in_game(steamid, token="", key=""):
     return out
 
 
-def steam_achievements(appid, steamid, token="", key=""):
+def _steam_ach_official(appid, steamid, auth):
+    """Steam'in resmi başarım servisi. (liste, hata) döner; liste None ise bu yoldan alınamadı."""
     import requests
-    auth = {"access_token": token} if token else ({"key": key} if key else {})
     r = requests.get(f"{STEAM_API}/ISteamUserStats/GetPlayerAchievements/v1/",
                      params={"appid": appid, "steamid": steamid, "l": "turkish", **auth}, timeout=20)
-    if r.status_code in (401, 403):
-        raise RuntimeError("Başarımlar okunamadı. Steam profilinde 'Oyun ayrıntıları' gizli olabilir.")
-    if r.status_code == 400:
-        return {"total": 0, "done": 0, "items": []}      # oyunun başarımı yok
-    r.raise_for_status()
-    ach = ((r.json() or {}).get("playerstats") or {}).get("achievements") or []
-    schema = {}
     try:
-        s = requests.get(f"{STEAM_API}/ISteamUserStats/GetSchemaForGame/v2/",
-                         params={"appid": appid, "l": "turkish", **auth}, timeout=20)
-        for a in (((s.json() or {}).get("game") or {}).get("availableGameStats") or {}).get("achievements") or []:
-            schema[a.get("name")] = a
+        ps = (r.json() or {}).get("playerstats") or {}
     except Exception:
-        pass
+        ps = {}
+    if r.status_code == 200 and ps.get("success") is not False and ps.get("achievements"):
+        return ps["achievements"], ""
+    how = "giriş" if "access_token" in auth else "anahtar"
+    LOG.info(f"Steam başarımları ({how}) alınamadı: {appid} | {r.status_code} | {(ps.get('error') or r.text[:160])}")
+    return None, ps.get("error") or ""
+
+
+def _steam_ach_community(appid, steamid):
+    """Yedek yol: Steam topluluk sayfasındaki başarım listesi (profil 'Oyun ayrıntıları' herkese açıksa çalışır)."""
+    import requests
+    import xml.etree.ElementTree as ET
+    r = requests.get(f"https://steamcommunity.com/profiles/{steamid}/stats/{appid}/achievements/",
+                     params={"xml": 1, "l": "turkish"}, timeout=20,
+                     headers={"User-Agent": f"Mozilla/5.0 OyunKutuphanem/{APP_VERSION}"})
+    if r.status_code != 200 or not r.text.lstrip().startswith("<"):
+        LOG.info(f"Steam başarımları (topluluk) alınamadı: {appid} | {r.status_code}")
+        return None, ""
+    try:
+        root = ET.fromstring(r.content)
+    except Exception as e:
+        LOG.info(f"Steam başarım listesi okunamadı: {appid} | {e}")
+        return None, ""
+    err = (root.findtext("error") or "").strip()
+    if err:
+        LOG.info(f"Steam başarımları (topluluk): {appid} | {err}")
+        return None, err
+    out = []
+    for a in root.iter("achievement"):
+        done = a.get("closed") == "1"
+        out.append({"apiname": (a.findtext("apiname") or "").strip(),
+                    "name": (a.findtext("name") or "").strip(),
+                    "description": (a.findtext("description") or "").strip(),
+                    "achieved": 1 if done else 0,
+                    "unlocktime": int((a.findtext("unlockTimestamp") or "0").strip() or 0),
+                    "_icon": (a.findtext("iconClosed") if done else a.findtext("iconOpen")) or ""})
+    return (out or None), ""
+
+
+def _steam_ach_schema(appid, token="", key=""):
+    """Başarımların adları ve simgeleri."""
+    import requests
+    schema = {}
+    if key:
+        try:
+            s = requests.get(f"{STEAM_API}/ISteamUserStats/GetSchemaForGame/v2/",
+                             params={"appid": appid, "l": "turkish", "key": key}, timeout=20)
+            for a in (((s.json() or {}).get("game") or {}).get("availableGameStats") or {}).get("achievements") or []:
+                schema[a.get("name")] = a
+        except Exception:
+            pass
+    if not schema and token:
+        try:
+            s = requests.get(f"{STEAM_API}/IPlayerService/GetGameAchievements/v1/",
+                             params={"appid": appid, "language": "turkish", "access_token": token}, timeout=20)
+            img = f"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{appid}/"
+            for a in ((s.json() or {}).get("response") or {}).get("achievements") or []:
+                schema[a.get("internal_name")] = {
+                    "displayName": a.get("localized_name") or "", "description": a.get("localized_desc") or "",
+                    "icon": img + a["icon"] if a.get("icon") else "",
+                    "icongray": img + a["icon_gray"] if a.get("icon_gray") else ""}
+        except Exception:
+            pass
+    return schema
+
+
+def steam_achievements(appid, steamid, token="", key=""):
+    """Steam başarımları. Önce giriş jetonuyla, olmazsa API anahtarıyla, o da olmazsa topluluk sayfasından dener."""
+    ach, errors = None, []
+    for auth in ([{"access_token": token}] if token else []) + ([{"key": key}] if key else []):
+        ach, err = _steam_ach_official(appid, steamid, auth)
+        if err:
+            errors.append(err)
+        if ach:
+            break
+    if not ach:
+        ach, err = _steam_ach_community(appid, steamid)
+        if err:
+            errors.append(err)
+    if not ach:
+        text = " ".join(errors).lower()
+        if "private" in text or "not public" in text or "gizli" in text:
+            raise RuntimeError("Başarımlar okunamadı: Steam profilinde 'Oyun ayrıntıları' gizli. "
+                               "Steam'de Profil > Profili düzenle > Gizlilik ayarları'ndan 'Oyun ayrıntıları'nı 'Herkese açık' yaparsan görünür.")
+        return {"total": 0, "done": 0, "items": []}      # oyunun başarımı yok
+    schema = _steam_ach_schema(appid, token, key)
     items = []
     for a in ach:
         sc = schema.get(a.get("apiname"), {})
         done = bool(a.get("achieved"))
+        icon = a.get("_icon") or (sc.get("icon") if done else sc.get("icongray")) or ""
         items.append({"name": a.get("name") or sc.get("displayName") or a.get("apiname", ""),
                       "desc": a.get("description") or sc.get("description") or "",
-                      "done": done, "time": int(a.get("unlocktime") or 0),
-                      "icon": (sc.get("icon") if done else sc.get("icongray")) or ""})
+                      "done": done, "time": int(a.get("unlocktime") or 0), "icon": icon})
     items.sort(key=lambda x: (not x["done"], -x["time"], x["name"].casefold()))
     return {"total": len(items), "done": sum(i["done"] for i in items), "items": items}
 
@@ -2750,16 +2825,16 @@ def run_gui():
                 self.run_background(lambda: epic_achievements(g.id), done)
                 return
             sid = str(self.cfg.get("steam_id") or "")
+            k = self.cfg.get("steam_api_key") or ""
             if self.cfg.get("steam_login") and WEB_OK:
                 def got(tok):
-                    if not tok:
+                    s = str((jwt_payload(tok).get("sub") if tok else "") or sid)
+                    if not s:
                         done(None, RuntimeError("Steam'e giriş yapman gerekiyor."))
                         return
-                    s = str(jwt_payload(tok).get("sub") or sid)
-                    self.run_background(lambda: steam_achievements(g.id, s, token=tok), done)
+                    self.run_background(lambda: steam_achievements(g.id, s, token=tok or "", key=k), done)
                 self.steam_session.get_token(got)
-            elif self.cfg.get("steam_api_key") and sid:
-                k = self.cfg["steam_api_key"]
+            elif sid:
                 self.run_background(lambda: steam_achievements(g.id, sid, key=k), done)
             else:
                 done(None, RuntimeError("Başarımları görmek için Steam'e giriş yap."))
