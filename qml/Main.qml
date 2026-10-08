@@ -10,7 +10,7 @@ ApplicationWindow {
     id: appRoot
     width: 1320
     height: 860
-    minimumWidth: 1000
+    minimumWidth: 1080
     minimumHeight: 620
     visible: !startHidden   // "Windows açılınca başlat" ile açıldıysa saatin yanında bekler
     title: "Oyun Kütüphanem"   // görev çubuğunda görünür; pencerenin içinde Windows başlığı yok
@@ -219,6 +219,18 @@ ApplicationWindow {
         spacing: 0
 
         RowLayout {   // üst çubuk
+            id: topBar
+            // Arama kutusu ve başlık dışındaki her şeyin kapladığı yer. Pencere daralınca önce başlık gizlenir,
+            // sonra arama kutusu küçülür; sağdaki menü butonu hiçbir zaman kesilmez.
+            readonly property real fixedWidth: {
+                var w = 0, n = 0
+                for (var i = 0; i < children.length; i++) {
+                    var c = children[i]
+                    if (c === appTitle || c === search || !c.visible) continue
+                    w += (c.Layout.preferredWidth > 0 ? c.Layout.preferredWidth : c.implicitWidth); n++
+                }
+                return w + n * spacing
+            }
             Layout.fillWidth: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
@@ -227,7 +239,8 @@ ApplicationWindow {
             spacing: 10
 
             Text {
-                visible: appRoot.width > 1260
+                id: appTitle
+                visible: topBar.width >= topBar.fixedWidth + 200 + implicitWidth + 8 + topBar.spacing
                 text: "Oyun Kütüphanem"
                 color: theme.text
                 font.family: theme.displayFont
@@ -238,7 +251,7 @@ ApplicationWindow {
             AppSearchField {
                 id: search
                 Layout.fillWidth: true
-                Layout.minimumWidth: 170
+                Layout.minimumWidth: 120
                 Layout.maximumWidth: 440
                 onTextChanged: if (backend.search !== text) backend.search = text
                 Keys.onDownPressed: appRoot.focusView()

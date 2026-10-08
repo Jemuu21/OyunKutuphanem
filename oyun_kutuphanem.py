@@ -411,41 +411,38 @@ def steam_local_state(steam_path):
     return result
 
 
-def _allocated_size(path):
-    """Dosyanın diskte gerçekten kapladığı yer. Steam dosyaları önceden boş olarak açabildiği için
-    Windows'ta 'ayrılan' boyut yerine gerçekten yazılmış kısmı sorar."""
-    if IS_WINDOWS:
+def steam_write_bytes():
+    """Steam'in şimdiye kadar diske yazdığı toplam veri (Windows'un tuttuğu sayaçtan).
+    Steam indirme yüzdesini dosyasına sadece durdurunca yazdığı için canlı ilerleme buradan tahmin edilir.
+    Bilinmiyorsa None."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        import ctypes
+        import winreg
+        from ctypes import wintypes
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam\ActiveProcess") as k:
+            pid = int(winreg.QueryValueEx(k, "pid")[0])
+        if not pid:
+            return None
+
+        class IO(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_ulonglong) for n in
+                        ("ro", "wo", "oo", "rb", "wb", "ob")]
+        k32 = ctypes.windll.kernel32
+        k32.OpenProcess.restype = wintypes.HANDLE
+        h = k32.OpenProcess(0x1000, False, pid)        # sadece bilgi okuma izni
+        if not h:
+            return None
         try:
-            import ctypes
-            from ctypes import wintypes
-            fn = ctypes.windll.kernel32.GetCompressedFileSizeW
-            fn.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
-            fn.restype = wintypes.DWORD
-            high = wintypes.DWORD(0)
-            low = fn(str(path), ctypes.byref(high))
-            if low != 0xFFFFFFFF or ctypes.GetLastError() == 0:
-                return (high.value << 32) + low
-        except Exception:
-            pass
-    try:
-        st = os.stat(path)
-        blocks = getattr(st, "st_blocks", None)
-        return min(st.st_size, blocks * 512) if blocks is not None else st.st_size
-    except OSError:
-        return 0
-
-
-def steam_staged_bytes(folder):
-    """Steam'in 'downloading' klasörüne şimdiye kadar yazdığı veri.
-    Steam ilerlemeyi dosyasına sadece arada bir (ya da durdurunca) yazdığı için canlı ilerleme buradan hesaplanır."""
-    total = 0
-    try:
-        for root, _dirs, files in os.walk(folder):
-            for f in files:
-                total += _allocated_size(os.path.join(root, f))
+            io = IO()
+            if not k32.GetProcessIoCounters(h, ctypes.byref(io)):
+                return None
+            return (pid, int(io.wb))
+        finally:
+            k32.CloseHandle(h)
     except Exception:
-        pass
-    return total
+        return None
 
 
 def resolve_steam_id(api_key, text):
@@ -3184,6 +3181,24 @@ def run_gui():
             self.poll_steam_local()
 
         @Slot()
+        def _steam_live_pct(self, g, st, file_pct):
+            """Steam'in yazdığı veri miktarından canlı yüzde tahmini.
+            Sadece şu an inen oyun için (Steam aynı anda tek oyun indirir)."""
+            if not (st["flags"] & 1024):                 # bu oyun şu an inmiyor (sırada ya da durdu)
+                return file_pct
+            total = st.get("to_stage") or st["to_dl"]
+            io = steam_write_bytes()
+            if not io or total <= 0:
+                return file_pct
+            pid, written = io
+            base = getattr(self, "_steam_live", None)
+            # yeni indirme, Steam yeniden açıldı ya da Steam kendi yüzdesini kaydetti: buradan saymaya başla
+            if not base or base["key"] != g.key or base["pid"] != pid or base["file_pct"] != file_pct:
+                base = {"key": g.key, "pid": pid, "file_pct": file_pct, "written": written}
+                self._steam_live = base
+            pct = file_pct + max(0, written - base["written"]) * 100.0 / total
+            return max(file_pct, min(pct, 99.0))
+
         def poll_steam_local(self):
             local = steam_local_state(self.steam_path)
             changed = False
@@ -3199,15 +3214,7 @@ def run_gui():
                     g.state = STEAM_DOWNLOADING
                     pct = st["done"] * 100.0 / st["to_dl"]
                     # Steam yüzdeyi dosyasına geç yazıyor; inen dosyalara bakarak canlı yüzdeyi bul
-                    total = st.get("to_stage") or st["to_dl"]
-                    got = steam_staged_bytes(st["staging"]) if os.path.isdir(st["staging"]) else 0
-                    if not st["flags"] & 4 and os.path.isdir(st["path"]):
-                        got += steam_staged_bytes(st["path"])     # ilk kurulum: dosyalar oyun klasörüne de yazılabilir
-                    if total > 0 and got > 0:
-                        pct = max(pct, min(got * 100.0 / total, 99.0))
-                    # aynı indirme sürerken yüzde geri gitmesin
-                    if old == STEAM_DOWNLOADING and g.progress > pct and pct > 0:
-                        pct = g.progress
+                    pct = self._steam_live_pct(g, st, pct)
                     g.progress = pct
                     g.installPath = st["path"]
                 else:

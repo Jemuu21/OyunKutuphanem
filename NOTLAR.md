@@ -1,1 +1,2 @@
-- Steam'den inen oyunların yüzdesi artık canlı güncelleniyor. Önceden Steam yüzdeyi sadece indirme durdurulunca kaydettiği için program %0'da takılı kalıyordu; artık inen dosyalara bakarak yüzdeyi kendisi hesaplıyor.
+- 4.7'deki hata düzeltildi: Steam'de yeni başlayan indirme programda hemen %99 görünüyordu. Steam oyunun dosyalarını indirmeden önce boş olarak açtığı için dosya boyutlarına bakmak yanlış sonuç veriyordu. Artık yüzde, Steam'in o ana kadar diske yazdığı veri miktarından hesaplanıyor.
+- Pencere tam ekran değilken sağ üstteki menü butonu (üç nokta) kesik görünüyordu. Artık yer daralınca önce "Oyun Kütüphanem" başlığı gizleniyor, sonra arama kutusu küçülüyor; menü butonu hep tam görünüyor.
