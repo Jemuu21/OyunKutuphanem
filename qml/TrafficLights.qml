@@ -1,7 +1,8 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Window
 
-// macOS tarzı pencere butonları: kapat (kırmızı), küçült (sarı), büyüt (yeşil)
+// Pencere butonları: küçült (sarı), ekranı kapla (yeşil), kapat (kırmızı)
 Item {
     id: tl
     property var win
@@ -18,27 +19,34 @@ Item {
         property color glyph
         property string kind     // close, min, max
         signal pressed()
-        width: 13
-        height: 13
-        radius: 7
+        width: 18
+        height: 18
+        radius: 9
         color: tl.win && tl.win.active || tl.hovering ? fill : (theme.dark ? "#3A4450" : "#C3CBD2")
         border.width: 0.5
         border.color: Qt.darker(color, 1.25)
         Accessible.role: Accessible.Button
         Accessible.name: kind === "close" ? "Kapat" : kind === "min" ? "Simge durumuna küçült" : (tl.maximized ? "Önceki boyut" : "Ekranı kapla")
 
-        Item {   // işaretler sadece fare butonların üstündeyken görünür, macOS'taki gibi
+        Item {   // işaretler hep görünür, fare üstündeyken daha belirgin
             anchors.fill: parent
-            visible: tl.hovering
-            Rectangle { visible: l.kind === "close"; anchors.centerIn: parent; width: 7; height: 1.5; rotation: 45; color: l.glyph }
-            Rectangle { visible: l.kind === "close"; anchors.centerIn: parent; width: 7; height: 1.5; rotation: -45; color: l.glyph }
-            Rectangle { visible: l.kind === "min"; anchors.centerIn: parent; width: 7; height: 1.5; color: l.glyph }
-            Rectangle { visible: l.kind === "max"; anchors.centerIn: parent; width: 7; height: 1.5; color: l.glyph }
-            Rectangle { visible: l.kind === "max"; anchors.centerIn: parent; width: 1.5; height: 7; color: l.glyph }
+            opacity: tl.hovering ? 1 : 0.55
+            Rectangle { visible: l.kind === "close"; anchors.centerIn: parent; width: 10; height: 2; rotation: 45; color: l.glyph }
+            Rectangle { visible: l.kind === "close"; anchors.centerIn: parent; width: 10; height: 2; rotation: -45; color: l.glyph }
+            Rectangle { visible: l.kind === "min"; anchors.centerIn: parent; width: 10; height: 2; color: l.glyph }
+            Rectangle { visible: l.kind === "max"; anchors.centerIn: parent; width: 10; height: 2; color: l.glyph }
+            Rectangle { visible: l.kind === "max"; anchors.centerIn: parent; width: 2; height: 10; color: l.glyph }
         }
         MouseArea {
+            id: lm
             anchors.fill: parent
+            anchors.margins: -4          // biraz taşan tıklama alanı: kolay basılsın
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
             onClicked: l.pressed()
+            ToolTip.visible: containsMouse
+            ToolTip.delay: 600
+            ToolTip.text: l.Accessible.name
         }
     }
 
@@ -50,20 +58,21 @@ Item {
         acceptedButtons: Qt.NoButton
     }
 
+    // Sağ üstte, Windows'taki sırayla: küçült, ekranı kapla, kapat (kapat en sağda)
     Row {
-    id: lights
-    spacing: 8
-    Light {
-        kind: "close"; fill: "#FF5F57"; glyph: "#7A0E0A"
-        onPressed: tl.win.close()
-    }
-    Light {
-        kind: "min"; fill: "#FEBC2E"; glyph: "#8A5A00"
-        onPressed: tl.win.showMinimized()
-    }
-    Light {
-        kind: "max"; fill: "#28C840"; glyph: "#0B5A16"
-        onPressed: tl.maximized ? tl.win.showNormal() : tl.win.showMaximized()
-    }
+        id: lights
+        spacing: 12
+        Light {
+            kind: "min"; fill: "#FEBC2E"; glyph: "#8A5A00"
+            onPressed: tl.win.showMinimized()
+        }
+        Light {
+            kind: "max"; fill: "#28C840"; glyph: "#0B5A16"
+            onPressed: tl.maximized ? tl.win.showNormal() : tl.win.showMaximized()
+        }
+        Light {
+            kind: "close"; fill: "#FF5F57"; glyph: "#7A0E0A"
+            onPressed: tl.win.close()
+        }
     }
 }
