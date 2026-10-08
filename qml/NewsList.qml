@@ -28,7 +28,9 @@ ColumnLayout {
             required property int index
             readonly property bool hasImage: modelData.image !== "" && img.status !== Image.Error
             Layout.fillWidth: true
-            implicitHeight: news.narrow ? narrowCol.implicitHeight + 24 : Math.max(wideCol.implicitHeight + 24, 96)
+            // resim yüklenince kart da uzasın (kartlar iç içe geçmesin)
+            implicitHeight: news.narrow ? narrowCol.y + narrowCol.implicitHeight + 12
+                                        : Math.max(wideCol.implicitHeight + 24, img.visible ? img.height + 24 : 0)
             hoverEnabled: true
             focusPolicy: Qt.StrongFocus
             Accessible.name: modelData.title
@@ -47,8 +49,8 @@ ColumnLayout {
                 id: img
                 x: 12; y: 12
                 visible: card.hasImage && status === Image.Ready
-                width: news.narrow ? card.width - 24 : 150
-                height: news.narrow ? (visible ? width * 0.42 : 0) : 72
+                width: news.narrow ? card.width - 24 : 180
+                height: news.narrow ? (visible ? width * 0.42 : 0) : 84
                 source: card.modelData.image
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true

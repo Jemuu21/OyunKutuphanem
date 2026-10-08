@@ -928,6 +928,44 @@ def _steam_ach_official(appid, steamid, auth):
     return None, ps.get("error") or ""
 
 
+def _steam_ach_progress(appid, steamid, token):
+    """Steam kütüphanesinin kullandığı yol (uygulama içi girişle çalışır, profil gizli olsa da):
+    açtığın başarımlar + oyunun bütün başarım listesi."""
+    import requests
+    img = f"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{appid}/"
+    r = requests.get(f"{STEAM_API}/IPlayerService/GetTopAchievementsForGames/v1/",
+                     params={"access_token": token, "steamid": steamid, "language": "turkish",
+                             "max_achievements": 10000, "appids[0]": appid}, timeout=20)
+    if not r.ok:
+        LOG.info(f"Steam başarımları (kütüphane yolu) alınamadı: {appid} | {r.status_code}")
+        return None
+    games = ((r.json() or {}).get("response") or {}).get("games") or []
+    if not games:
+        return None
+    total = int(games[0].get("total_achievements") or 0)
+    got = games[0].get("achievements") or []
+    if not total:
+        return None
+    s = requests.get(f"{STEAM_API}/IPlayerService/GetGameAchievements/v1/",
+                     params={"appid": appid, "language": "turkish", "access_token": token}, timeout=20)
+    schema = ((s.json() or {}).get("response") or {}).get("achievements") or [] if s.ok else []
+    names = {a.get("name") for a in got}
+    out = []
+    if schema:
+        for a in schema:
+            done = a.get("localized_name") in names
+            icon = a.get("icon") if done else a.get("icon_gray")
+            out.append({"apiname": a.get("internal_name") or "", "name": a.get("localized_name") or "",
+                        "description": a.get("localized_desc") or "", "achieved": 1 if done else 0,
+                        "unlocktime": 0, "_icon": img + icon if icon else ""})
+    else:
+        for a in got:
+            out.append({"apiname": "", "name": a.get("name") or "", "description": a.get("desc") or "",
+                        "achieved": 1, "unlocktime": 0, "_icon": img + a["icon"] if a.get("icon") else ""})
+    LOG.info(f"Steam başarımları (kütüphane yolu): {appid} | {len(got)}/{total}")
+    return out or None
+
+
 def _steam_ach_community(appid, steamid):
     """Yedek yol: Steam topluluk sayfasındaki başarım listesi (profil 'Oyun ayrıntıları' herkese açıksa çalışır)."""
     import requests
@@ -935,8 +973,8 @@ def _steam_ach_community(appid, steamid):
     r = requests.get(f"https://steamcommunity.com/profiles/{steamid}/stats/{appid}/achievements/",
                      params={"xml": 1, "l": "turkish"}, timeout=20,
                      headers={"User-Agent": f"Mozilla/5.0 OyunKutuphanem/{APP_VERSION}"})
-    if r.status_code != 200 or not r.text.lstrip().startswith("<"):
-        LOG.info(f"Steam başarımları (topluluk) alınamadı: {appid} | {r.status_code}")
+    if r.status_code != 200 or not r.text.lstrip().startswith("<?xml"):
+        LOG.info(f"Steam başarımları (topluluk) alınamadı: {appid} | {r.status_code} | {r.text.lstrip()[:60]!r}")
         return None, ""
     try:
         root = ET.fromstring(r.content)
@@ -995,6 +1033,11 @@ def steam_achievements(appid, steamid, token="", key=""):
             errors.append(err)
         if ach:
             break
+    if not ach and token:
+        try:
+            ach = _steam_ach_progress(appid, steamid, token)
+        except Exception as e:
+            LOG.info(f"Steam başarımları (kütüphane yolu) hata: {appid} | {mask(e)}")
     if not ach:
         ach, err = _steam_ach_community(appid, steamid)
         if err:

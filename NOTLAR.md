@@ -1,1 +1,3 @@
-- Pencere butonları (küçült, ekranı kapla, kapat) sağ üst köşeye taşındı ve büyüdü. Sıralama Windows'taki gibi: kapat en sağda. Üstlerindeki işaretler artık hep görünür, fareyle üstüne gelince ne işe yaradıkları yazar.
+- Kütüphane görünümünde oyun sayfası yeniden düzenlendi: başarımlar sağ sütunda, haberler ve güncellemeler sol tarafta "Konum"un altında.
+- Haberlerin resimleri yüklenince kartlar iç içe geçiyordu, düzeldi.
+- Steam başarımları için bir yol daha eklendi: Steam kütüphanesinin kendi kullandığı yol. Uygulama içi Steam girişiyle, profilin gizli olsa bile açtığın başarımlar görünür.
