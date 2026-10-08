@@ -1,1 +1,1 @@
-- Kütüphane görünümünde bazı oyunlarda logo yerine kapak resmi çıkıyordu (ARC Raiders gibi). Artık sadece arka planı saydam gerçek logolar kullanılıyor. Logo bulunamazsa oyunun adı yazılır.
+- Steam'den inen oyunların yüzdesi artık canlı güncelleniyor. Önceden Steam yüzdeyi sadece indirme durdurulunca kaydettiği için program %0'da takılı kalıyordu; artık inen dosyalara bakarak yüzdeyi kendisi hesaplıyor.

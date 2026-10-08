@@ -398,15 +398,54 @@ def steam_local_state(steam_path):
                 flags = int(st.get("stateflags", "0") or 0)
                 to_dl = int(st.get("bytestodownload", "0") or 0)
                 done = int(st.get("bytesdownloaded", "0") or 0)
+                to_stage = int(st.get("bytestostage", "0") or 0)
             except Exception:
                 continue
             result[str(appid)] = {
                 "name": st.get("name", f"Steam oyunu {appid}"),
-                "flags": flags, "to_dl": to_dl, "done": done,
+                "flags": flags, "to_dl": to_dl, "done": done, "to_stage": to_stage,
+                "staging": str(d / "downloading" / str(appid)),
                 "path": str(d / "common" / st.get("installdir", "")),
                 "size": int(st.get("sizeondisk", "0") or 0),
             }
     return result
+
+
+def _allocated_size(path):
+    """Dosyanın diskte gerçekten kapladığı yer. Steam dosyaları önceden boş olarak açabildiği için
+    Windows'ta 'ayrılan' boyut yerine gerçekten yazılmış kısmı sorar."""
+    if IS_WINDOWS:
+        try:
+            import ctypes
+            from ctypes import wintypes
+            fn = ctypes.windll.kernel32.GetCompressedFileSizeW
+            fn.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
+            fn.restype = wintypes.DWORD
+            high = wintypes.DWORD(0)
+            low = fn(str(path), ctypes.byref(high))
+            if low != 0xFFFFFFFF or ctypes.GetLastError() == 0:
+                return (high.value << 32) + low
+        except Exception:
+            pass
+    try:
+        st = os.stat(path)
+        blocks = getattr(st, "st_blocks", None)
+        return min(st.st_size, blocks * 512) if blocks is not None else st.st_size
+    except OSError:
+        return 0
+
+
+def steam_staged_bytes(folder):
+    """Steam'in 'downloading' klasörüne şimdiye kadar yazdığı veri.
+    Steam ilerlemeyi dosyasına sadece arada bir (ya da durdurunca) yazdığı için canlı ilerleme buradan hesaplanır."""
+    total = 0
+    try:
+        for root, _dirs, files in os.walk(folder):
+            for f in files:
+                total += _allocated_size(os.path.join(root, f))
+    except Exception:
+        pass
+    return total
 
 
 def resolve_steam_id(api_key, text):
@@ -3158,7 +3197,18 @@ def run_gui():
                     g.state, g.progress, g.installPath = NOT_INSTALLED, -1.0, ""
                 elif st["to_dl"] > 0 and st["done"] < st["to_dl"]:
                     g.state = STEAM_DOWNLOADING
-                    g.progress = st["done"] * 100.0 / st["to_dl"]
+                    pct = st["done"] * 100.0 / st["to_dl"]
+                    # Steam yüzdeyi dosyasına geç yazıyor; inen dosyalara bakarak canlı yüzdeyi bul
+                    total = st.get("to_stage") or st["to_dl"]
+                    got = steam_staged_bytes(st["staging"]) if os.path.isdir(st["staging"]) else 0
+                    if not st["flags"] & 4 and os.path.isdir(st["path"]):
+                        got += steam_staged_bytes(st["path"])     # ilk kurulum: dosyalar oyun klasörüne de yazılabilir
+                    if total > 0 and got > 0:
+                        pct = max(pct, min(got * 100.0 / total, 99.0))
+                    # aynı indirme sürerken yüzde geri gitmesin
+                    if old == STEAM_DOWNLOADING and g.progress > pct and pct > 0:
+                        pct = g.progress
+                    g.progress = pct
                     g.installPath = st["path"]
                 else:
                     g.state, g.progress, g.installPath = INSTALLED, -1.0, st["path"]
