@@ -21,6 +21,7 @@ Item {
         opacity: appRoot.dragGame === tile.game ? 0.35 : (tile.game.hidden ? 0.5 : 1)
         transform: Translate { id: shift }
 
+        HoverHandler { id: tileHover }
         DragHandler {   // oyunu tutup bir rafa ya da raftaki başka bir yere sürükle
             id: dh
             target: null
@@ -137,11 +138,16 @@ Item {
         }
 
         GameActions {
+            // Butonlar sadece fare üstündeyken (ya da klavyeyle seçiliyken, ya da indirme sürerken) görünür
+            readonly property bool busy: ["downloading", "paused", "queued", "steam_dl"].indexOf(tile.game.state) >= 0
             x: 14
             width: tile.width - 28
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             game: tile.game
+            opacity: tileHover.hovered || tile.isCurrent || busy || activeFocus ? 1 : 0
+            visible: opacity > 0
+            Behavior on opacity { enabled: appRoot.motion; NumberAnimation { duration: 120 } }
         }
     }
 

@@ -1,2 +1,6 @@
-- Arkadaşınla ortak oyunlar: uygulama içi Steam girişiyle arkadaş listesi açılmıyordu (hata 400). Artık Steam'in kendi sohbet uygulamasının kullandığı yoldan alınıyor. Alttaki "Oyunda" şeridi de aynı sorundan etkileniyordu, o da düzeldi.
-- Güvenlik: hata mesajlarında Steam giriş bilgisinin bir kısmı (jeton) ekranda görünebiliyordu. Artık hata mesajlarında adres, anahtar ya da jeton hiçbir zaman gösterilmiyor, sadece kısa bir açıklama çıkıyor.
+Daha sade bir görünüm:
+- Üst çubuk sadeleşti: platform, sıralama ve "sadece kurulu" artık tek bir "Filtre" butonunda. Bir filtre seçiliyse butonun üstünde yazar (örneğin "Steam · Kurulu").
+- Izgara / Liste / Kütüphane seçimi küçük simgelere dönüştü (Ctrl+1, Ctrl+2, Ctrl+3 aynen çalışır).
+- Tema düğmesi menüye taşındı (kısayolu Ctrl+T aynen çalışır).
+- Kartlardaki ve listedeki butonlar artık sadece fareyle üstüne gelince görünür. İnen oyunlarda her zaman görünür.
+- Oyun sayfasında sadece ana buton (Oyna / İndir), favori yıldızı ve "⋯" var. Klasörü aç, rafa ekle, gizle, kapağı değiştir ve kaldır "⋯" menüsünde.

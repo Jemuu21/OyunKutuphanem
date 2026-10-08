@@ -252,36 +252,14 @@ ApplicationWindow {
                 id: search
                 Layout.fillWidth: true
                 Layout.minimumWidth: 120
-                Layout.maximumWidth: 440
+                Layout.maximumWidth: 560
                 onTextChanged: if (backend.search !== text) backend.search = text
                 Keys.onDownPressed: appRoot.focusView()
                 Keys.onReturnPressed: appRoot.focusView()
             }
-            Segmented {
-                options: backend.localCount > 0 ? ["Hepsi", "Steam", "Epic", "Diğer"] : ["Hepsi", "Steam", "Epic"]
-                current: backend.platformFilter
-                onPicked: (i) => backend.platformFilter = i
-            }
-            AppCombo {
-                Layout.preferredWidth: 182
-                model: backend.currentShelfIsCustom ? ["Ada göre", "Son oynanan", "En çok oynanan", "Kurulu olanlar önce", "Rafın sırası"]
-                                                    : ["Ada göre", "Son oynanan", "En çok oynanan", "Kurulu olanlar önce"]
-                currentIndex: backend.sortMode
-                onActivated: (i) => backend.sortMode = i
-            }
-            ToggleChip {
-                text: "Sadece kurulu"
-                checked: backend.onlyInstalled
-                onToggled: backend.onlyInstalled = checked
-            }
-            Segmented {
-                objectName: "viewSeg"
-                options: ["Izgara", "Liste", "Kütüphane"]
-                current: backend.viewMode === "list" ? 1 : backend.viewMode === "library" ? 2 : 0
-                onPicked: (i) => { backend.viewMode = ["grid", "list", "library"][i]; appRoot.focusView() }
-            }
+            FilterButton {}
+            ViewSwitch {}
             DiceButton { onClicked: pickDialog.open() }
-            ThemeSwitch {}
             DotsButton {
                 id: menuButton
                 compact: false
@@ -481,6 +459,7 @@ ApplicationWindow {
         AppMenuItem { text: "Güncellemeleri kontrol et"; visible: backend.updateEnabled; onTriggered: backend.checkUpdates(true) }
         AppMenuItem { text: "Klavye kısayolları (F1)"; onTriggered: appRoot.shortcutsHelp() }
         AppMenuItem { text: "Sorun bildir"; onTriggered: backend.reportProblem() }
+        AppMenuItem { text: backend.dark ? "Aydınlık tema (Ctrl+T)" : "Karanlık tema (Ctrl+T)"; onTriggered: backend.dark = !backend.dark }
         AppMenuItem { text: "Ayarlar (Ctrl+,)"; onTriggered: appRoot.settingsOpen = true }
         AppMenuSeparator {}
         AppMenuItem { text: "Programdan çık"; onTriggered: backend.requestQuit() }

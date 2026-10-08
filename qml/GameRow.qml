@@ -30,6 +30,7 @@ Item {
         color: theme.line
     }
 
+    HoverHandler { id: rowHover }
     DragHandler {
         target: null
         dragThreshold: 14
@@ -135,10 +136,15 @@ Item {
             font.pixelSize: 13
         }
         GameActions {
+            readonly property bool busy: ["downloading", "paused", "queued", "steam_dl"].indexOf(row.game.state) >= 0
             Layout.fillWidth: false
             Layout.preferredWidth: 270
             Layout.maximumWidth: 270
             game: row.game
+            // yer tutmaya devam etsin ama butonlar sadece fare üstündeyken görünsün
+            opacity: rowHover.hovered || row.isCurrent || busy ? 1 : 0
+            enabled: opacity > 0
+            Behavior on opacity { enabled: appRoot.motion; NumberAnimation { duration: 120 } }
         }
     }
 }

@@ -10,7 +10,12 @@ AppMenu {
     readonly property bool canUninstall: has && game.state === "installed"
     readonly property bool local: has && game.platform === "local"
 
-    AppMenuItem { text: "Ayrıntılar"; onTriggered: appRoot.openDetail(menu.game) }
+    AppMenuItem {
+        text: "Ayrıntılar"
+        // oyunun sayfası zaten açıksa gerek yok
+        visible: menu.has && appRoot.detailGame !== menu.game && backend.viewMode !== "library"
+        onTriggered: appRoot.openDetail(menu.game)
+    }
     AppMenuItem {
         text: "Oyna"
         visible: menu.epic && menu.game.state === "installed" && menu.game.update

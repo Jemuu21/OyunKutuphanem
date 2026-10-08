@@ -257,6 +257,17 @@ Rectangle {
                             value: page.has ? page.game.sizeText : ""
                             height: 50
                         }
+                        Row {   // favori ve diğer işlemler (klasör, rafa ekle, gizle, kapak, kaldır)
+                            spacing: 8
+                            height: 50
+                            FavButton { anchors.verticalCenter: parent.verticalCenter; game: page.game }
+                            DotsButton {
+                                id: barMore
+                                anchors.verticalCenter: parent.verticalCenter
+                                compact: false
+                                onClicked: appRoot.showGameMenu(page.game, barMore, 0, barMore.height + 4)
+                            }
+                        }
                     }
                 }
 
@@ -286,42 +297,12 @@ Rectangle {
                         text: "İptal et"
                         onClicked: appRoot.askCancel(page.game)
                     }
-                    AppButton {
-                        visible: page.has && (page.game.installPath !== "" || page.game.state === "downloading")
-                        text: "Klasörü aç"
-                        onClicked: backend.openFolder(page.game.key)
-                    }
-                    AppButton {
-                        visible: page.epic && page.game.cloud && page.game.state === "installed"
-                        text: "Kayıtları eşitle"
-                        onClicked: backend.syncSaves(page.game.key)
-                    }
-                    AppButton {
-                        text: page.has && S.isFav(page.game) ? "Favorilerden çıkar" : "Favorilere ekle"
-                        onClicked: backend.toggleFavorite(page.game.key)
-                    }
-                    AppButton {
-                        text: page.has && page.game.hidden ? "Raftan gizlemeyi kaldır" : "Raftan gizle"
-                        onClicked: backend.toggleHidden(page.game.key)
-                    }
-                    AppButton {
-                        text: "Rafa ekle"
-                        onClicked: shelfPick.openFor(page.game)
-                    }
-                    AppButton {
-                        text: "Kapağı değiştir"
-                        onClicked: coverPicker.openFor(page.game)
-                    }
-                    AppButton {
-                        visible: page.has && page.game.platform === "local"
-                        text: "Adını değiştir"
-                        onClicked: localDialog.openRename(page.game)
-                    }
-                    AppButton {
-                        visible: page.has && page.game.state === "installed"
-                        kind: "danger"
-                        text: page.has && page.game.platform === "local" ? "Raftan kaldır" : "Kaldır"
-                        onClicked: appRoot.askUninstall(page.game)
+                    FavButton { visible: !page.embedded; game: page.game }
+                    DotsButton {
+                        id: moreBtn
+                        visible: !page.embedded
+                        compact: false
+                        onClicked: appRoot.showGameMenu(page.game, moreBtn, 0, moreBtn.height + 4)
                     }
                 }
 
