@@ -1712,6 +1712,8 @@ def run_gui():
             self._needsOnboarding = (not self.cfg.get("onboarded") and not self.cfg.get("steam_api_key")
                                      and not self.cfg.get("steam_via_token") and not self.cfg.get("steam_login"))
             self._steamExpired = False
+            self._epicWaiting = False
+            self._epicBusy = False
             self._steam_session = None      # tarayıcı motoru sadece gerektiğinde başlatılır
             self._epic_profiles = []
             self._introActive = False
@@ -3516,34 +3518,53 @@ def run_gui():
             self.load_steam()
             self.toast.emit("Steam'den çıkış yapıldı. Bilgisayarındaki kurulu Steam oyunları rafta kalır.", "info")
 
+        # ---- Epic girişi: bilgisayarın kendi tarayıcısında
+        # Epic (özellikle Google / Apple ile giriş) program içindeki pencereye izin vermediği için giriş
+        # varsayılan tarayıcıda yapılır. Girişten sonra açılan sayfadaki yazı kopyalanınca program panodan
+        # kodu kendisi alır. Kod tek kullanımlıktır ve birkaç dakikada geçersiz olur.
+        epicWaiting = _simple("epicWaiting")
+        epicBusy = _simple("epicBusy")
+        EPIC_CODE_RE = re.compile(r'"authorizationCode"\s*:\s*"([0-9a-fA-F]{32})"')
+
         @Slot()
         def loginEpic(self):
-            if not WEB_OK:
+            QDesktopServices.openUrl(QUrl(EPIC_LOGIN_URL))
+            LOG.info("Epic girişi tarayıcıda açıldı, pano izleniyor")
+            if not self.epicWaiting:
+                from PySide6.QtGui import QGuiApplication
+                QGuiApplication.clipboard().dataChanged.connect(self._epic_clipboard)
+            self.epicWaiting = True
+            if getattr(self, "_epic_wait_timer", None) is None:
+                self._epic_wait_timer = QTimer(self, singleShot=True, interval=15 * 60 * 1000)
+                self._epic_wait_timer.timeout.connect(self.cancelEpicLogin)
+            self._epic_wait_timer.start()
+
+        def _epic_clipboard(self):
+            from PySide6.QtGui import QGuiApplication
+            text = QGuiApplication.clipboard().text() or ""
+            m = self.EPIC_CODE_RE.search(text) if len(text) < 20000 else None
+            if not m:
                 return
-            profile = QWebEngineProfile(self)      # gizli pencere: Epic girişi sadece kod almak için
-            clean_ua(profile)
-            self._epic_profiles.append(profile)
-            win = LoginWindow("Epic Games ile giriş", profile, EPIC_LOGIN_URL,
-                              "Epic'in kendi giriş sayfası. Giriş yapınca pencere kendiliğinden kapanır. "
-                              "Şifren programa kaydedilmez.")
+            LOG.info("Epic giriş kodu panodan alındı")
+            self._stop_epic_wait()
+            QGuiApplication.clipboard().clear()        # kod gizli bilgi, panoda kalmasın
+            self.submitEpicCode(m.group(1))
 
-            def check(*_):
-                if "/id/api/redirect" in win.view.url().toString():
-                    def read(text):
-                        m = re.search(r'"authorizationCode"\s*:\s*"([^"]+)"', text or "")
-                        if m:
-                            win.finish(m.group(1))
-                    win.page.toPlainText(read)
-            win.page.loadFinished.connect(check)
+        def _stop_epic_wait(self):
+            if self.epicWaiting:
+                from PySide6.QtGui import QGuiApplication
+                try:
+                    QGuiApplication.clipboard().dataChanged.disconnect(self._epic_clipboard)
+                except Exception:
+                    pass
+            self.epicWaiting = False
+            if getattr(self, "_epic_wait_timer", None) is not None:
+                self._epic_wait_timer.stop()
 
-            def done(code):
-                if code:
-                    LOG.info("Epic giriş kodu yakalandı")
-                    self.submitEpicCode(code)
-                else:
-                    self.epicLoginResult.emit(False, "")
-            win.finished.connect(done)
-            win.show()
+        @Slot()
+        def cancelEpicLogin(self):
+            self._stop_epic_wait()
+            self.epicLoginResult.emit(False, "")
 
         @Slot()
         def logoutEpic(self):
@@ -3759,15 +3780,18 @@ def run_gui():
 
         @Slot()
         def openEpicLoginPage(self):
-            QDesktopServices.openUrl(QUrl("https://legendary.gl/epiclogin"))
+            QDesktopServices.openUrl(QUrl(EPIC_LOGIN_URL))
 
         @Slot(str)
         def submitEpicCode(self, text):
+            self._stop_epic_wait()
             m = re.search(r'"authorizationCode"\s*:\s*"([^"]+)"', text or "")
             code = m.group(1) if m else (text or "").strip().strip('"')
             if not code:
                 self.epicLoginResult.emit(False, "Önce sayfadaki yazıyı kopyalayıp buraya yapıştır.")
                 return
+
+            self.epicBusy = True
 
             def job():
                 r = legendary_run("auth", "--code", code, "--disable-webview", timeout=120)
@@ -3775,11 +3799,13 @@ def run_gui():
                     raise RuntimeError(last_error_line(r, "Giriş başarısız"))
 
             def done(_, error):
+                self.epicBusy = False
                 if error:
-                    self.epicLoginResult.emit(False, f"Giriş olmadı: {error}. Kod birkaç dakikada geçersiz olur, "
-                                                     "sayfayı yenileyip yeni kodu dene.")
+                    self.epicLoginResult.emit(False, f"Giriş olmadı: {user_error(error)} Kod birkaç dakikada geçersiz olur, "
+                                                     "giriş sayfasını yeniden açıp tekrar dene.")
                 else:
                     self.epicLoginResult.emit(True, "Epic hesabın bağlandı.")
+                    self.notify("Epic hesabın bağlandı, oyunların rafa geliyor.", "ok")
                     self._suppress_new = True
                     self.load_epic()
             self.run_background(job, done)

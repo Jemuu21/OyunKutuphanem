@@ -1,3 +1,3 @@
-- Arkadaş listesi: üstteki iki kişi simgesine bas (yanında kaç arkadaşının çevrim içi olduğu yazar). Sağda Steam arkadaşların açılır: oyunda olanlar, çevrim içi olanlar ve çevrim dışı olanlar ayrı ayrı. Çevrim dışı olanlarda en son ne zaman görüldüğü yazar.
-- Lobisi açık arkadaşının yanında "Katıl" butonu çıkar. Bir arkadaşa tıklayınca: Mesaj at (Steam sohbeti açılır), oyununa katıl, oynadığı oyunun sayfası, ortak oyunlarınız ve Steam profili. Çift tıklayınca direkt mesaj penceresi açılır.
-- Liste açıkken alttaki "Oyunda" şeridi gizlenir (aynı bilgi listede var).
+- Epic girişi artık bilgisayarındaki tarayıcıda (Chrome, Edge…) açılıyor. Google ve Apple ile giriş de çalışıyor.
+- Girişten sonra açılan sayfada Ctrl+A ve Ctrl+C'ye basman yeterli: program kopyaladığını kendisi görüp hesabını bağlıyor. Algılamazsa Ayarlar'daki kutuya yapıştırabilirsin.
+- Giriş kodu güvenlik için kullanıldıktan sonra panodan silinir.

@@ -13,7 +13,6 @@ ColumnLayout {
     signal connected()
     spacing: 10
 
-    property bool manual: false
     Text {
         Layout.fillWidth: true
         text: ep.linked ? "Bağlı Epic hesabı: " + backend.epicAccount : "Epic oyunlarını görmek için hesabınla bir kere giriş yapman yeterli."
@@ -24,11 +23,12 @@ ColumnLayout {
     RowLayout {
         spacing: 8
         AppButton {
-            visible: backend.webLoginAvailable && !ep.linked
+            objectName: "epicLoginButton"
+            visible: !ep.linked && !backend.epicWaiting
             kind: "primary"
-            text: ep.busy ? "Giriş penceresi açık" : "Epic ile giriş yap"
-            enabled: !ep.busy
-            onClicked: { ep.busy = true; ep.result = ""; backend.loginEpic() }
+            text: ep.busy || backend.epicBusy ? "Bağlanıyor…" : "Epic ile giriş yap"
+            enabled: !ep.busy && !backend.epicBusy
+            onClicked: { ep.result = ""; backend.loginEpic() }
         }
         AppButton {
             visible: ep.linked
@@ -39,81 +39,89 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true
-        visible: backend.webLoginAvailable && !ep.linked
-        text: "Programın içinde Epic'in kendi giriş sayfası açılır, giriş yapınca kendiliğinden kapanır. Şifren programa kaydedilmez."
+        visible: !ep.linked && !backend.epicWaiting
+        text: "Giriş, bilgisayarındaki tarayıcıda (Chrome, Edge…) açılır. Google, Apple ya da e-postanla giriş yapabilirsin. Şifren programa kaydedilmez."
         color: theme.muted
         font.pixelSize: 12
         wrapMode: Text.WordWrap
     }
+
+    // Tarayıcıda giriş yapılırken: adımlar ve yedek yapıştırma kutusu
+    Rectangle {
+        objectName: "epicSteps"
+        visible: !ep.linked && backend.epicWaiting
+        Layout.fillWidth: true
+        implicitHeight: stepsCol.implicitHeight + 28
+        radius: 10
+        color: theme.surfaceHigh
+        border.color: theme.accent
+        ColumnLayout {
+            id: stepsCol
+            x: 16; y: 14
+            width: parent.width - 32
+            spacing: 8
+            Text {
+                Layout.fillWidth: true
+                text: "Tarayıcında Epic giriş sayfası açıldı"
+                color: theme.text
+                font.pixelSize: 15
+                font.weight: Font.Bold
+                wrapMode: Text.WordWrap
+            }
+            Repeater {
+                model: [
+                    "1. Epic hesabınla giriş yap (Google, Apple, e-posta… hangisiyle istersen).",
+                    "2. Girişten sonra içinde kod yazan bir sayfa açılacak. O sayfada Ctrl+A'ya, sonra Ctrl+C'ye bas.",
+                    "3. Bu kadar. Program kopyaladığını kendisi görür ve hesabını bağlar, buraya dönmen gerekmez."
+                ]
+                Text {
+                    required property string modelData
+                    Layout.fillWidth: true
+                    text: modelData
+                    color: theme.text
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                }
+            }
+            RowLayout {
+                spacing: 8
+                AppButton { compact: true; text: "Sayfayı tekrar aç"; onClicked: backend.loginEpic() }
+                AppButton { compact: true; kind: "ghost"; text: "Vazgeç"; onClicked: backend.cancelEpicLogin() }
+            }
+            Text {
+                Layout.topMargin: 4
+                Layout.fillWidth: true
+                text: "Kendisi algılamazsa kopyaladığını buraya yapıştır:"
+                color: theme.muted
+                font.pixelSize: 12
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                AppField {
+                    id: codeField
+                    Layout.fillWidth: true
+                    placeholderText: "Sayfadaki yazı (içinde authorizationCode geçer)"
+                    onAccepted: if (text.trim() !== "") connectBtn.clicked()
+                }
+                AppButton {
+                    id: connectBtn
+                    kind: "primary"
+                    text: "Bağlan"
+                    enabled: codeField.text.trim() !== ""
+                    onClicked: { ep.busy = true; ep.result = ""; backend.submitEpicCode(codeField.text) }
+                }
+            }
+        }
+    }
     Text {
         Layout.fillWidth: true
-        visible: ep.result !== "" && !ep.manualVisible
+        visible: ep.result !== ""
         text: ep.result
         color: ep.resultOk ? theme.ok : theme.danger
         font.pixelSize: 13
         wrapMode: Text.WordWrap
     }
-    AbstractButton {
-        id: manualToggle
-        visible: backend.webLoginAvailable && !ep.linked
-        hoverEnabled: true
-        onClicked: ep.manual = !ep.manual
-        contentItem: Text {
-            text: (ep.manual ? "▾ " : "▸ ") + "Giriş penceresi açılmazsa: elle bağlan"
-            color: manualToggle.hovered ? theme.text : theme.muted
-            font.pixelSize: 13
-        }
-        background: Item {}
-    }
-    readonly property bool manualVisible: !ep.linked && (ep.manual || !backend.webLoginAvailable)
-    ColumnLayout {
-        Layout.fillWidth: true
-        visible: ep.manualVisible
-        spacing: 10
-        Repeater {
-            model: [
-                "1. 'Giriş sayfasını aç' butonuna bas ve Epic hesabınla giriş yap.",
-                "2. Girişten sonra sayfada bir yazı çıkacak. İçinde authorizationCode geçiyor. Yazının tamamını kopyala.",
-                "3. Aşağıya yapıştır ve 'Bağlan'a bas. Kod birkaç dakika geçerli."
-            ]
-            Text {
-                required property string modelData
-                Layout.fillWidth: true
-                text: modelData
-                color: theme.muted
-                font.pixelSize: 13
-                wrapMode: Text.WordWrap
-            }
-        }
-        AppButton { text: "Giriş sayfasını aç"; onClicked: backend.openEpicLoginPage() }
-        AppField {
-            id: codeField
-            Layout.fillWidth: true
-            placeholderText: "Kopyaladığın yazıyı buraya yapıştır"
-        }
-        RowLayout {
-            spacing: 12
-            AppButton {
-                kind: "primary"
-                text: ep.busy ? "Bağlanıyor" : "Bağlan"
-                enabled: !ep.busy && codeField.text.trim() !== ""
-                onClicked: {
-                    ep.busy = true
-                    ep.result = ""
-                    backend.submitEpicCode(codeField.text)
-                }
-            }
-            Text {
-                Layout.fillWidth: true
-                visible: ep.result !== ""
-                text: ep.result
-                color: ep.resultOk ? theme.ok : theme.danger
-                font.pixelSize: 13
-                wrapMode: Text.WordWrap
-            }
-        }
-    }
-
     Rectangle { Layout.fillWidth: true; Layout.topMargin: 6; height: 1; color: theme.line }
     Text { text: "Epic oyunlarının kurulacağı klasör"; color: theme.text; font.pixelSize: 14; font.weight: Font.Bold }
     RowLayout {
@@ -141,7 +149,6 @@ ColumnLayout {
             ep.resultOk = ok
             if (ok) {
                 codeField.text = ""
-                ep.manual = false
                 ep.connected()
             }
         }
