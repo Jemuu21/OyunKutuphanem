@@ -817,10 +817,39 @@ def _friend_details(ids, auth):
     return out
 
 
+_APP_NAMES = {}
+
+
+def steam_app_names(appids):
+    """Steam oyun numaralarından oyun adları (mağazadan, önbellekli)."""
+    import requests
+    need = [a for a in dict.fromkeys(str(x) for x in appids) if a not in _APP_NAMES and a.isdigit() and int(a) < 2 ** 32]
+    for i in range(0, len(need), 100):
+        req = {"ids": [{"appid": int(a)} for a in need[i:i + 100]],
+               "context": {"language": "turkish", "country_code": "TR"},
+               "data_request": {"include_basic_info": True}}
+        try:
+            r = requests.get(f"{STEAM_API}/IStoreBrowseService/GetItems/v1/",
+                             params={"input_json": json.dumps(req)}, timeout=20)
+            for it in ((r.json() or {}).get("response") or {}).get("store_items", []):
+                if it.get("appid") and it.get("name"):
+                    _APP_NAMES[str(it["appid"])] = it["name"]
+        except Exception as e:
+            LOG.info(f"Oyun adları alınamadı: {mask(e)}")
+    return {str(a): _APP_NAMES.get(str(a), "") for a in appids}
+
+
 def steam_friend_list(steamid, token="", key=""):
     """Bütün Steam arkadaşları: ad, resim, çevrim içi mi, şu an ne oynuyor."""
     auth = {"access_token": token} if token else ({"key": key} if key else {})
     out = _friend_details(_friend_ids(steamid, auth), auth)
+    # Steam'in sohbet servisi oyunun sadece numarasını veriyor; adını mağazadan bul
+    missing = [f["appid"] for f in out if f["appid"] and not f["game"]]
+    if missing:
+        names = steam_app_names(missing)
+        for f in out:
+            if f["appid"] and not f["game"]:
+                f["game"] = names.get(f["appid"]) or "Bir oyun"
     # önce oyunda olanlar, sonra çevrim içi olanlar, sonra ada göre
     out.sort(key=lambda x: (not x["game"], not x["online"], x["name"].casefold()))
     return out

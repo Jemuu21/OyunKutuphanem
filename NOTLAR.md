@@ -1,3 +1,1 @@
-- Epic girişi artık bilgisayarındaki tarayıcıda (Chrome, Edge…) açılıyor. Google ve Apple ile giriş de çalışıyor.
-- Girişten sonra açılan sayfada Ctrl+A ve Ctrl+C'ye basman yeterli: program kopyaladığını kendisi görüp hesabını bağlıyor. Algılamazsa Ayarlar'daki kutuya yapıştırabilirsin.
-- Giriş kodu güvenlik için kullanıldıktan sonra panodan silinir.
+- Arkadaş listesi: Steam'den oynanan bir oyunu oynayan arkadaşın "Çevrim içi" görünüyordu. Steam bu durumda sadece oyunun numarasını veriyor; program artık oyunun adını mağazadan bulup "AION 2 oynuyor" gibi gösteriyor.

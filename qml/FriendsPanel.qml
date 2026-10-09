@@ -191,7 +191,7 @@ Rectangle {
         }
         AppMenuItem {
             text: !!friendMenu.f && friendMenu.f.owned ? friendMenu.f.game + " sayfası" : "Oynadığı oyun (mağazada)"
-            visible: !!friendMenu.f && friendMenu.f.appid !== ""
+            visible: !!friendMenu.f && friendMenu.f.appid !== "" && friendMenu.f.appid.length < 11   // Steam dışı oyunların mağaza sayfası yok
             onTriggered: backend.openFriendGame(friendMenu.f.appid)
         }
         AppMenuItem { text: "Ortak oyunlarımız"; onTriggered: commonGames.openFor(friendMenu.f.steamid, friendMenu.f.name) }
