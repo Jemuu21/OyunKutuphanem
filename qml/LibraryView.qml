@@ -25,10 +25,13 @@ FocusScope {
         target: gamesModel
         function onModelReset() {
             Qt.callLater(function() {
+                // arama sonucu boşsa seçili oyun bırakılmaz, sağ taraf sadece gizlenir (boş oyun sayfası açılmaz)
+                if (gamesModel.count === 0) return
                 var i = root.selectedKey !== "" ? gamesModel.indexOfKey(root.selectedKey) : -1
-                list.currentIndex = i >= 0 ? i : (gamesModel.count > 0 ? 0 : -1)
-                root.selected = gamesModel.get(list.currentIndex)
-                if (list.currentIndex >= 0) list.positionViewAtIndex(list.currentIndex, ListView.Contain)
+                list.currentIndex = i >= 0 ? i : 0
+                var g = gamesModel.get(list.currentIndex)
+                if (g) root.selected = g
+                list.positionViewAtIndex(list.currentIndex, ListView.Contain)
             })
         }
     }
@@ -51,8 +54,8 @@ FocusScope {
             focus: true
             interactive: false      // fareyle sürükleme oyunu rafa taşır; kaydırma tekerlekle
             currentIndex: 0
-            onCurrentIndexChanged: root.selected = gamesModel.get(currentIndex)
-            onCountChanged: if (!root.selected && count > 0) root.selected = gamesModel.get(currentIndex)
+            onCurrentIndexChanged: { var g = gamesModel.get(currentIndex); if (g) root.selected = g }
+            onCountChanged: if (!root.selected && count > 0) root.selected = gamesModel.get(Math.max(0, currentIndex))
             keyNavigationEnabled: true
             highlightFollowsCurrentItem: false
             boundsBehavior: Flickable.StopAtBounds
@@ -98,6 +101,15 @@ FocusScope {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         embedded: true
+        visible: list.count > 0          // arama hiçbir şey bulmazsa sağ taraf boş kalır
         game: root.selected
+    }
+    Text {
+        anchors.centerIn: parent
+        anchors.horizontalCenterOffset: side.width / 2
+        visible: list.count === 0 && backend.search !== ""
+        text: "\"" + backend.search + "\" ile eşleşen oyun yok."
+        color: theme.muted
+        font.pixelSize: 15
     }
 }

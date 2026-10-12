@@ -20,7 +20,7 @@ Rectangle {
     // geniş ekranda haberler sağda ayrı sütunda, dar ekranda en altta
     // geniş ekranda (kütüphane görünümü) başarımlar sağda ayrı sütunda, haberler altta
     readonly property bool sideColumn: embedded && width >= 1250
-    readonly property bool achVisible: has && game.platform !== "local"
+    readonly property bool achVisible: !!game && game.platform !== "local"
                                        && (achLoading || (!!ach && (ach.total > 0 || ach.error !== "")))
     property var ach: null          // başarımlar
     property bool achLoading: false

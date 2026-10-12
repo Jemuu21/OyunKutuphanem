@@ -1,1 +1,3 @@
-- Bazı bilgisayarlarda Epic listesi yenilenirken "Unhandled exception in script ... [Errno 22] Invalid argument" diye bir Windows hata penceresi çıkıyordu. Düzeltildi: Epic listesi artık Windows'un çıktı kanalı yerine geçici bir dosya üzerinden alınıyor. Bir şey ters giderse de hata penceresi çıkmıyor, program kendi mesajını gösterip bir kez daha deniyor.
+- Aramada hiçbir oyun bulunamayınca (yanlış yazınca ya da listede olmayan bir oyunu arayınca) program kapanabiliyordu. Kütüphane görünümünde artık boş bir oyun sayfası açılmıyor, "… ile eşleşen oyun yok" yazıyor.
+- Arama artık her harfte değil, yazmayı kısa bir an bırakınca yapılıyor: çok oyunlu kütüphanelerde daha akıcı.
+- Program yine beklenmedik şekilde kapanırsa nedeni bir dosyaya yazılıyor; "Sorun bildir" bunu da kopyalıyor.

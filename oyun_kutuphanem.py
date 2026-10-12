@@ -138,6 +138,14 @@ def setup_logging():
     def hook(t, v, tb):
         LOG.error("Beklenmeyen hata:\n" + "".join(traceback.format_exception(t, v, tb)))
     sys.excepthook = hook
+    # Program beklenmedik şekilde kapanırsa (Qt içinde çökme) nedenini bu dosyaya yazar
+    try:
+        import faulthandler
+        global _CRASH_FILE
+        _CRASH_FILE = open(DATA_DIR / "cokme.log", "a", encoding="utf-8")
+        faulthandler.enable(_CRASH_FILE)
+    except Exception:
+        pass
     threading.excepthook = lambda a: hook(a.exc_type, a.exc_value, a.exc_traceback)
     LOG.info(f"=== Oyun Kütüphanem {APP_VERSION} açıldı | {platform.platform()} | "
              f"{'kurulu program' if FROZEN else 'kaynak koddan'} | Python {platform.python_version()}")
@@ -1808,6 +1816,8 @@ def run_gui():
 
             self._relayout_timer = QTimer(self, singleShot=True, interval=30)
             self._relayout_timer.timeout.connect(self._relayout_now)
+            self._search_timer = QTimer(self, singleShot=True, interval=180)
+            self._search_timer.timeout.connect(self.relayout)
             self.steam_timer = QTimer(self, interval=3000)
             self.steam_timer.timeout.connect(self.poll_steam_local)
             self.update_timer = QTimer(self, interval=60 * 60 * 1000)
@@ -1849,7 +1859,10 @@ def run_gui():
                     self.cfg["sort"] = v
                     write_json(CONFIG_FILE, self.cfg)
                 self.changed.emit()
-                self.relayout()
+                if name == "search":
+                    self._search_timer.start()     # yazarken her harfte değil, kısa bir duraklamadan sonra
+                else:
+                    self.relayout()
             return Property(typ, getter, setter, notify=sig)
 
         dark = _simple("dark", "dark")
@@ -3295,6 +3308,12 @@ def run_gui():
                 f"Ekran kartı: {'kapalı' if self.softwareActive else 'açık'}",
                 "-" * 60,
             ]
+            try:   # son çökme kaydı varsa onu da ekle
+                crash = (DATA_DIR / "cokme.log").read_text(encoding="utf-8", errors="replace").strip().splitlines()[-60:]
+                if crash:
+                    lines += ["-" * 60, "Son çökme kaydı:"] + crash
+            except Exception:
+                pass
             QGuiApplication.clipboard().setText(mask("\n".join(head + lines)))
             LOG.info("Sorun bildirimi panoya kopyalandı")
             self.toast.emit("Kayıt panoya kopyalandı. Claude'a ya da bana yapıştırıp gönderebilirsin.", "ok")
