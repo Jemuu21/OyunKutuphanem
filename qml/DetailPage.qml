@@ -54,6 +54,18 @@ Rectangle {
 
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: (w) => w.accepted = true }
 
+    // oyunun renginden arka plan tonu (kütüphane görünümünde büyük görselin altından başlar)
+    readonly property string tint: page.has && page.game.cover !== "" ? backend.tintFor(page.game.key) : ""
+    AmbientGlow {
+        id: glow
+        anchors.left: parent.left
+        anchors.right: parent.right
+        y: page.embedded ? Math.max(0, hero.height - flick.contentY) : 0
+        height: Math.max(300, page.height * 0.75)
+        tint: page.tint
+        strength: theme.dark ? 0.22 : 0.16
+    }
+
     AppButton {
         id: back
         x: 24; y: 18
@@ -103,7 +115,7 @@ Rectangle {
                 height: parent.height * 0.4
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: "transparent" }
-                    GradientStop { position: 1.0; color: theme.bg }
+                    GradientStop { position: 1.0; color: glow.topColor }
                 }
             }
             Image {
@@ -202,6 +214,14 @@ Rectangle {
                         radius: 3
                         color: page.has && page.game.state === "paused" ? theme.muted : theme.accent
                     }
+                }
+
+                SpeedChart {   // Epic indirmesinin hız grafiği
+                    objectName: "speedChart"
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: 900
+                    visible: page.epic && (page.game.state === "downloading" || page.game.state === "paused")
+                    game: page.game
                 }
 
                 // Kütüphane görünümü: büyük Oyna butonu ve yanında kısa bilgiler

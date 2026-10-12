@@ -69,6 +69,19 @@ Item {
                     checked: backend.dark
                     onToggled: backend.dark = checked
                 }
+                Text { text: "Kapak şekli (ızgarada)"; color: theme.text; font.pixelSize: 14; font.weight: Font.Bold }
+                Segmented {
+                    options: ["Yatay", "Dikey kutu"]
+                    current: backend.coverStyle === "tall" ? 1 : 0
+                    onPicked: (i) => backend.coverStyle = i === 1 ? "tall" : "wide"
+                }
+                AppSwitch {
+                    Layout.fillWidth: true
+                    text: "Oyun açılınca programı küçült"
+                    note: "Oyna'ya basınca oyunun görseli kısa bir an ekranı kaplar, sonra program simge durumuna küçülür."
+                    checked: backend.minimizeOnPlay
+                    onToggled: backend.minimizeOnPlay = checked
+                }
                 AppSwitch {
                     Layout.fillWidth: true
                     text: "Animasyonları azalt"

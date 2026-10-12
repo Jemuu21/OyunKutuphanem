@@ -117,6 +117,13 @@ AbstractButton {
                     }
                 }
             }
+            Label { text: "KAPAKLAR"; Layout.topMargin: 6 }
+            Segmented {
+                objectName: "coverStyleSeg"
+                options: ["Yatay", "Dikey kutu"]
+                current: backend.coverStyle === "tall" ? 1 : 0
+                onPicked: (i) => backend.coverStyle = i === 1 ? "tall" : "wide"
+            }
             ToggleChip {
                 Layout.topMargin: 6
                 text: "Sadece kurulu oyunlar"

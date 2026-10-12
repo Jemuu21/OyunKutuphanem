@@ -23,6 +23,8 @@ ApplicationWindow {
     // Ekran kartı olmadan çizerken animasyonlar ağırlaşır, o zaman kendiliğinden kapanır
     readonly property bool motion: !backend.reduceMotion && !backend.softwareActive
     property var detailGame: null
+    property var hoverGame: null        // ızgarada fareyle üstüne gelinen oyun (arka plan tonu için)
+    property var launchGame: null       // açılan oyun (tam ekran geçiş)
     property bool settingsOpen: false
     property bool skyOpen: false
     property bool diskOpen: false
@@ -357,6 +359,15 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
+            AmbientGlow {   // ızgarada fareyle üstüne gelinen oyunun rengi, arka planda hafifçe
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: parent.height
+                visible: backend.viewMode === "grid"
+                tint: appRoot.hoverGame && appRoot.hoverGame.cover !== "" ? backend.tintFor(appRoot.hoverGame.key) : ""
+                strength: theme.dark ? 0.14 : 0.10
+            }
+
             GridShelf {
                 id: gridShelf
                 anchors.fill: parent
@@ -557,6 +568,16 @@ ApplicationWindow {
     ShelfPickDialog { id: shelfPick; objectName: "shelfPick" }
     SourcePickDialog { id: sourcePick; objectName: "sourcePick" }
     CommonGamesDialog { id: commonGames; objectName: "commonGames" }
+    LaunchOverlay {
+        id: launchOverlay
+        objectName: "launchOverlay"
+        anchors.fill: parent
+        z: 95
+    }
+    Connections {
+        target: backend
+        function onLaunching(g) { launchOverlay.start(g) }
+    }
     NameDialog { id: nameDialog; objectName: "nameDialog" }
     Connections {
         target: backend

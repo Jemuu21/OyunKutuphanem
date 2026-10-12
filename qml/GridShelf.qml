@@ -12,8 +12,17 @@ FocusScope {
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.max(cellWidth, Math.floor((root.width - 20) / cellWidth) * cellWidth)
-        cellWidth: 262
-        cellHeight: 292
+        readonly property bool tall: backend.coverStyle === "tall"
+        cellWidth: tall ? 210 : 262
+        cellHeight: tall ? 424 : 292
+        // en üstte "Son oynadıkların" (sadece Tümü rafında, arama ve filtre yokken)
+        readonly property bool showRecent: backend.recentGames.length > 0 && backend.currentShelf === ""
+                                           && backend.search === "" && backend.platformFilter === 0 && !backend.onlyInstalled
+        header: showRecent ? recentComp : null
+        Component {
+            id: recentComp
+            RecentStrip { width: grid.width }
+        }
         model: gamesModel
         delegate: GameTile {}
         clip: true

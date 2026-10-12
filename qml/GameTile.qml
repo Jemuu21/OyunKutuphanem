@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Layouts
 import "state.js" as S
 
@@ -10,6 +11,10 @@ Item {
     readonly property GridView view: GridView.view
     readonly property bool isCurrent: GridView.isCurrentItem && view && view.activeFocus
     readonly property int cols: view ? Math.max(1, Math.floor(view.width / view.cellWidth)) : 1
+    readonly property bool tall: backend.coverStyle === "tall"
+    readonly property bool lifted: (coverMouse.containsMouse || hover.containsMouse && hover.mouseY < cover.y + cover.height) && appRoot.motion
+    z: lifted ? 3 : 0
+    onLiftedChanged: if (lifted) appRoot.hoverGame = game
 
     width: view ? view.cellWidth : 262
     height: view ? view.cellHeight : 290
@@ -65,9 +70,35 @@ Item {
             x: 14
             y: 16
             width: tile.width - 28
-            height: Math.round(width * 215 / 460)
+            height: Math.round(tile.tall ? width * 1.5 : width * 215 / 460)
             game: tile.game
-            highlighted: hover.containsMouse || coverMouse.containsMouse || tile.isCurrent
+            tall: tile.tall
+            highlighted: (tile.isCurrent && !tile.lifted) || (!appRoot.motion && (hover.containsMouse || coverMouse.containsMouse))
+            // fareyle üstüne gelince hafifçe büyür, gölge düşer ve farenin yerine göre eğilir
+            scale: tile.lifted ? 1.05 : 1
+            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+            transform: [
+                Rotation {
+                    origin.x: cover.width / 2; origin.y: cover.height / 2
+                    axis { x: 0; y: 1; z: 0 }
+                    angle: tile.lifted ? (coverMouse.mouseX / cover.width - 0.5) * 9 : 0
+                    Behavior on angle { NumberAnimation { duration: 110 } }
+                },
+                Rotation {
+                    origin.x: cover.width / 2; origin.y: cover.height / 2
+                    axis { x: 1; y: 0; z: 0 }
+                    angle: tile.lifted ? -(coverMouse.mouseY / cover.height - 0.5) * 9 : 0
+                    Behavior on angle { NumberAnimation { duration: 110 } }
+                }
+            ]
+            layer.enabled: tile.lifted && !backend.softwareActive
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: "#000000"
+                shadowOpacity: theme.dark ? 0.65 : 0.35
+                shadowBlur: 0.9
+                shadowVerticalOffset: 10
+            }
 
             MouseArea {
                 id: coverMouse

@@ -309,7 +309,8 @@ def load_config():
            "dark": True, "reduce_motion": False, "software_render": False,
            "view": "grid", "onboarded": False,
            "free_notify": True, "auto_update_check": True, "wish_notify": True,
-           "show_friends": True, "shelf": "", "dup_pref": "ask", "friends_panel": False}
+           "show_friends": True, "shelf": "", "dup_pref": "ask", "friends_panel": False,
+           "cover_style": "wide", "minimize_on_play": True}
     cfg.update(read_json(CONFIG_FILE, {}))
     return cfg
 
@@ -1198,6 +1199,33 @@ def epic_image(game_json):
     return ""
 
 
+def epic_tall_image(game_json):
+    """Epic oyununun dikey kutu görseli (kütüphanede dikey kapak görünümü için)."""
+    imgs = (game_json.get("metadata") or {}).get("keyImages") or []
+    by_type = {i.get("type"): i.get("url") for i in imgs if i.get("url")}
+    for t in ("DieselGameBoxTall", "OfferImageTall", "DieselStoreFrontTall"):
+        if by_type.get(t):
+            url = by_type[t]
+            if "epicgames.com" in url and "?" not in url:
+                url += "?h=450&w=300&resize=1"
+            return url
+    return ""
+
+
+def steam_capsule_urls(appid):
+    """Yeni Steam oyunlarında dikey kapağın gerçek adresi (mağazaya sorulur)."""
+    import requests
+    req = {"ids": [{"appid": int(appid)}], "context": {"language": "english", "country_code": "TR"},
+           "data_request": {"include_assets": True}}
+    r = requests.get(f"{STEAM_API}/IStoreBrowseService/GetItems/v1/", params={"input_json": json.dumps(req)}, timeout=15)
+    items = ((r.json() or {}).get("response") or {}).get("store_items", []) if r.ok else []
+    assets = (items[0].get("assets") or {}) if items else {}
+    fmt = assets.get("asset_url_format") or ""
+    base = "https://shared.akamai.steamstatic.com/store_item_assets/"
+    return [base + fmt.replace("${FILENAME}", assets[k]) for k in ("library_capsule", "library_capsule_2x")
+            if fmt and assets.get(k)]
+
+
 def epic_is_third_party(game_json):
     attrs = (game_json.get("metadata") or {}).get("customAttributes") or {}
     return bool((attrs.get("ThirdPartyManagedApp") or {}).get("value")
@@ -1259,7 +1287,8 @@ def load_epic():
             continue  # EA / Ubisoft gibi başka launcher isteyen oyunlar
         versions = {p: (info or {}).get("build_version") for p, info in (g.get("asset_infos") or {}).items()}
         slim_games.append({"app_name": g["app_name"], "title": g.get("app_title") or g["app_name"],
-                           "image": epic_image(g), "cloud": epic_has_cloud_saves(g), "versions": versions})
+                           "image": epic_image(g), "tall": epic_tall_image(g),
+                           "cloud": epic_has_cloud_saves(g), "versions": versions})
     slim_installed = [{"app_name": i["app_name"], "path": i.get("install_path", ""),
                        "version": i.get("version"), "platform": i.get("platform") or "Windows",
                        "size": int(i.get("install_size") or 0)}
@@ -1457,6 +1486,9 @@ def run_gui():
         downloadSize = Property(str, *acc("downloadSize", ""), notify=changed)
         sizeBytes = Property(float, *acc("sizeBytes", 0.0), notify=changed)      # diskte kapladığı yer
         customCover = Property(bool, *acc("customCover", False), notify=changed)  # kapağı kullanıcı seçti
+        portrait = Property(str, *acc("portrait", ""), notify=changed)            # dikey kapak (renkli)
+        portraitGray = Property(str, *acc("portraitGray", ""), notify=changed)    # dikey kapak (gri)
+        speedSamples = Property("QVariantList", *acc("speedSamples", []), notify=changed)   # indirme hızı geçmişi (MB/s)
         skyX = Property(float, *acc("skyX", 0.0), notify=changed)
         skyY = Property(float, *acc("skyY", 0.0), notify=changed)
         skySize = Property(float, *acc("skySize", 4.0), notify=changed)
@@ -1759,6 +1791,8 @@ def run_gui():
         diskChanged = Signal()
         wishChanged = Signal()
         shelfChanged = Signal()
+        recentChanged = Signal()
+        launching = Signal(QObject)            # oyun açılıyor: tam ekran geçiş için
         friendsChanged = Signal()
         friendListLoaded = Signal("QVariantList", str)           # bütün arkadaşlar, hata
         commonGamesLoaded = Signal(str, "QVariantMap")          # arkadaş, {items, error, name}
@@ -2273,6 +2307,7 @@ def run_gui():
                        and (order is None or in_shelf(g))]
             visible.sort(key=sort_key)
             self.model.set_items(visible)
+            self._update_recent()
 
         def _game(self, key):
             return self.games.get(key)
@@ -2317,6 +2352,102 @@ def run_gui():
                              QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
             req.setRawHeader(b"User-Agent", f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) OyunKutuphanem/{APP_VERSION}".encode())
             return req
+
+        # ---- dikey kapaklar (sadece ekranda görünen oyunlar için, gerektikçe indirilir)
+        coverStyle = _simple("coverStyle", "cover_style", str)
+        minimizeOnPlay = _simple("minimizeOnPlay", "minimize_on_play")
+
+        @Slot(str)
+        def wantPortrait(self, key):
+            g = self._game(key)
+            if not g or g.portrait or getattr(g, "_portrait_asked", False) or g.platform == "local":
+                return
+            g._portrait_asked = True
+            h = hashlib.md5(key.encode()).hexdigest()
+            color, gray = CACHE_DIR / f"tall_{h}.jpg", CACHE_DIR / f"tall_{h}_gri.jpg"
+
+            def got(path):
+                if not path:
+                    return
+                try:
+                    if not gray.exists():
+                        QImage(str(path)).convertToFormat(QImage.Format.Format_Grayscale8).save(str(gray), "JPG", 88)
+                except Exception:
+                    return
+                g.portraitGray = QUrl.fromLocalFile(str(gray)).toString()
+                g.portrait = QUrl.fromLocalFile(str(color)).toString()
+
+            if g.platform == "epic":
+                urls = [g.tall_url] if getattr(g, "tall_url", "") else []
+                self._fetch_image(urls, color, 300, got)
+                return
+            classic = [f"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{g.id}/library_600x900.jpg",
+                       f"https://cdn.cloudflare.steamstatic.com/steam/apps/{g.id}/library_600x900.jpg"]
+
+            def first(path):
+                if path:
+                    got(path)
+                    return
+                # yeni oyunlarda dosya başka klasörde: mağazaya sor
+                self.run_background(lambda: steam_capsule_urls(g.id),
+                                    lambda urls, err: self._fetch_image(urls or [], color, 300, got))
+            self._fetch_image(classic, color, 300, first, remember_miss=False)
+
+        # ---- oyunun renginden arka plan tonu
+        @Slot(str, result=str)
+        def tintFor(self, key):
+            g = self._game(key)
+            if not g or not g.cover:
+                return ""
+            cached = getattr(g, "_tint", None)
+            if cached is not None:
+                return cached
+            from PySide6.QtGui import QColor
+            tint = ""
+            try:
+                img = QImage(QUrl(g.cover).toLocalFile()).scaled(24, 12)
+                sx = sy = wsum = sat = val = 0.0
+                for y in range(img.height()):
+                    for x in range(img.width()):
+                        c = img.pixelColor(x, y)
+                        h_, s_, v_ = c.hsvHueF(), c.hsvSaturationF(), c.valueF()
+                        w = s_ * v_
+                        if h_ < 0 or w < 0.05:
+                            continue
+                        sx += math.cos(h_ * 2 * math.pi) * w
+                        sy += math.sin(h_ * 2 * math.pi) * w
+                        wsum += w
+                        sat += s_ * w
+                        val += v_ * w
+                if wsum > 2:
+                    hue = (math.atan2(sy, sx) / (2 * math.pi)) % 1.0
+                    s2 = min(0.7, max(0.35, sat / wsum))
+                    tint = QColor.fromHsvF(hue, s2, 0.62).name()
+            except Exception:
+                tint = ""
+            g._tint = tint
+            return tint
+
+        # ---- son oynadıkların
+        def _recent(self):
+            return getattr(self, "_recent_list", [])
+
+        recentGames = Property("QVariantList", _recent, notify=recentChanged)
+
+        def _update_recent(self):
+            seen, out = set(), []
+            for g in sorted(self._unique_games(), key=lambda g: -(g.lastPlayed or 0)):
+                if not g.lastPlayed or g.hidden or g.state == NOT_INSTALLED:
+                    continue
+                if g.key in seen:
+                    continue
+                seen.add(g.key)
+                out.append(g)
+                if len(out) == 5:
+                    break
+            if [x.key for x in out] != [x.key for x in getattr(self, "_recent_list", [])]:
+                self._recent_list = out
+                self.recentChanged.emit()
 
         # ---- kütüphane görünümündeki büyük görsel ve oyun logosu
         @Slot(str)
@@ -2372,13 +2503,17 @@ def run_gui():
                         clear += 1
             return clear >= total * 0.15
 
-        def _fetch_image(self, urls, path, max_w, done):
+        def _fetch_image(self, urls, path, max_w, done, remember_miss=True):
             """Görseli önbellekten verir ya da sırayla adresleri dener. Bulunamazsa done(None)."""
             miss = Path(str(path) + ".yok")
             if path.exists():
                 done(path)
                 return
             if not urls or (miss.exists() and time.time() - miss.stat().st_mtime < 7 * 86400):
+                done(None)
+                return
+            urls = [u for u in urls if u]
+            if not urls:
                 done(None)
                 return
             reply = self.net.get(self._req(urls[0]))
@@ -2400,7 +2535,9 @@ def run_gui():
                     LOG.info(f"Görsel alındı: {path.name} | {urls[0].split('?')[0]}")
                     done(path)
                 elif len(urls) > 1:
-                    self._fetch_image(urls[1:], path, max_w, done)
+                    self._fetch_image(urls[1:], path, max_w, done, remember_miss)
+                elif not remember_miss:
+                    done(None)
                 else:
                     try:
                         miss.parent.mkdir(parents=True, exist_ok=True)
@@ -3845,6 +3982,7 @@ def run_gui():
             keys, updates = set(), 0
             for item in result.get("games", []):
                 g = self.upsert("epic", item["app_name"], item["title"], item["image"])
+                g.tall_url = item.get("tall", "")
                 keys.add(g.key)
                 g.cloud = bool(item.get("cloud", False))
                 p = plays.get(g.id, {})
@@ -3976,6 +4114,7 @@ def run_gui():
             self._refresh_queue()
 
         def _epic_start_download(self, g):
+            g.speedSamples = []
             args = ["-y", "install", g.id, "--skip-sdl"]
             if g.updating:
                 args.append("--update-only")
@@ -4020,6 +4159,8 @@ def run_gui():
                     g.progress = float(m.group(1))
                     g.info = f"kalan {m.group(2)}"
                 m = re.search(r"\+ Download\s*-\s*([\d.]+) MiB/s", line)
+                if m:
+                    g.speedSamples = (list(g.speedSamples) + [round(float(m.group(1)) * 1.048576, 1)])[-90:]   # MiB/s -> MB/s
                 if m and g.progress >= 0:
                     eta = g.info.split(",")[0].strip()
                     g.info = f"{eta}, {float(m.group(1)):.1f} MB/s"
@@ -4280,6 +4421,7 @@ def run_gui():
             g = self._game(key)
             if not g:
                 return
+            self.launching.emit(g)
             if g.platform == "steam":
                 QDesktopServices.openUrl(QUrl(f"steam://rungameid/{g.id}"))
                 return
