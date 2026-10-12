@@ -1,1 +1,1 @@
-- Arkadaş listesi: Steam'den oynanan bir oyunu oynayan arkadaşın "Çevrim içi" görünüyordu. Steam bu durumda sadece oyunun numarasını veriyor; program artık oyunun adını mağazadan bulup "AION 2 oynuyor" gibi gösteriyor.
+- Bazı bilgisayarlarda Epic listesi yenilenirken "Unhandled exception in script ... [Errno 22] Invalid argument" diye bir Windows hata penceresi çıkıyordu. Düzeltildi: Epic listesi artık Windows'un çıktı kanalı yerine geçici bir dosya üzerinden alınıyor. Bir şey ters giderse de hata penceresi çıkmıyor, program kendi mesajını gösterip bir kez daha deniyor.

@@ -1124,10 +1124,11 @@ def steam_header(appid):
 # --------------------------------------------------------------------------
 # Epic (Legendary)
 # --------------------------------------------------------------------------
-def legendary_run(*args, timeout=600):
+def legendary_run(*args, timeout=600, env=None):
     return subprocess.run(LEGENDARY + list(args), capture_output=True, text=True,
                           encoding="utf-8", errors="replace", timeout=timeout,
-                          creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
+                          creationflags=NO_WINDOW, stdin=subprocess.DEVNULL,
+                          env={**os.environ, **env} if env else None)
 
 
 def last_error_line(r, default="bilinmeyen hata"):
@@ -1137,11 +1138,34 @@ def last_error_line(r, default="bilinmeyen hata"):
 
 
 def legendary_json(*args, timeout=180):
-    r = legendary_run(*args, timeout=timeout)
-    out = r.stdout.strip()
-    if r.returncode != 0 or not out:
-        raise RuntimeError(f"Legendary hatası: {last_error_line(r)}")
-    return json.loads(out)
+    for attempt in range(2):          # bir kez takılırsa bir daha dene
+        out_file = None
+        if FROZEN:
+            # .exe'de büyük çıktı Windows'un kanalından geçerken bozulabiliyor; sonucu dosyaya yazdır
+            import tempfile
+            fd, out_file = tempfile.mkstemp(prefix="ok_legendary_", suffix=".json")
+            os.close(fd)
+        try:
+            r = legendary_run(*args, timeout=timeout, env={"OYUN_KUTUPHANEM_OUT": out_file} if out_file else None)
+            out = r.stdout.strip()
+            if out_file:
+                try:
+                    out = Path(out_file).read_text(encoding="utf-8", errors="replace").strip() or out
+                except OSError:
+                    pass
+        finally:
+            if out_file:
+                try:
+                    os.remove(out_file)
+                except OSError:
+                    pass
+        if r.returncode == 0 and out:
+            try:
+                return json.loads(out)
+            except ValueError:
+                pass
+        LOG.info(f"Legendary {' '.join(args[:1])} başarısız (deneme {attempt + 1}): {mask(last_error_line(r))}")
+    raise RuntimeError(f"Epic listesi alınamadı: {mask(last_error_line(r))}")
 
 
 def legendary_tmp_dir():
@@ -1292,18 +1316,49 @@ def _fix_std_streams():
         stream = None
         if h and h != ctypes.c_void_p(-1).value:
             try:
-                fd = msvcrt.open_osfhandle(h, os.O_RDONLY if mode == "r" else 0)
-                stream = open(fd, mode, encoding="utf-8", errors="replace", buffering=1)
+                # yazma kanalı ikili (binary) açılır: Windows'un metin modu büyük çıktılarda hata verebiliyor
+                flags = os.O_RDONLY if mode == "r" else (os.O_WRONLY | getattr(os, "O_BINARY", 0))
+                fd = msvcrt.open_osfhandle(h, flags)
+                stream = open(fd, mode, encoding="utf-8", errors="replace", newline="\n")
             except Exception:
                 stream = None
         setattr(sys, name, stream or open(os.devnull, mode))
 
 
 def run_legendary_mode():
+    """Program kendini Legendary (Epic) aracı olarak çalıştırır. Burada bir hata olursa kullanıcının karşısına
+    Windows hata penceresi çıkmamalı: hata ana programa iletilir, ana program kendi mesajını gösterir."""
     _fix_std_streams()
+    out_file = os.environ.pop("OYUN_KUTUPHANEM_OUT", "")
+    if out_file:
+        sys.stdout = open(out_file, "w", encoding="utf-8", newline="\n")
     sys.argv = ["legendary"] + sys.argv[2:]
-    from legendary.cli import main as legendary_main
-    legendary_main()
+    code = 0
+    try:
+        from legendary.cli import main as legendary_main
+        legendary_main()
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+    except (BrokenPipeError, OSError) as e:
+        # çıktı kanalı kapandı (ana program kapandı ya da çıktı yazılamadı): sessizce çık
+        code = 3
+        try:
+            sys.stderr.write(f"[OyunKutuphanem] ERROR: çıktı yazılamadı: {e}\n")
+        except Exception:
+            pass
+        sys.stdout = open(os.devnull, "w")     # kapanırken tekrar yazmaya çalışıp hata vermesin
+    except Exception:
+        code = 1
+        try:
+            import traceback
+            sys.stderr.write("[OyunKutuphanem] ERROR: " + traceback.format_exc().replace("\n", " | ") + "\n")
+        except Exception:
+            pass
+    try:
+        sys.stdout.flush()
+    except Exception:
+        sys.stdout = open(os.devnull, "w")
+    sys.exit(code)        # normal çıkış: Legendary'nin kapanırken yaptığı kayıtlar da tamamlanır
 
 
 
